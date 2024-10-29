@@ -6,18 +6,15 @@ import blackjax.diagnostics as diagnostics
 import equinox as eqx
 import os
 import re 
-import plots_MCMC
 from plots_MCMC import *
 from SGLD_prototype import params_init
+from memory_profiler import profile
+import gc
+from SGLD_prototype import get_batch,loss_data,l2_norm
+from SGLD_sampling import dataset, num_obs
 
-def break_chain(chain,number_of_chains):
-    chains=[[] for _ in range(number_of_chains)]
-    chain_length = len(chain)
-    for i in range(number_of_chains):
-        start_index = i * chain_length // number_of_chains
-        end_index = (i + 1) * chain_length // number_of_chains
-        chains[i] = chain[start_index:end_index]
-    return chains
+
+rng_key=jax.random.PRNGKey(2)
 
 def extract_single_model_components(model):
     comp1=model["nn_geom"].layers[1].layers[0].v[10,78]
@@ -26,81 +23,105 @@ def extract_single_model_components(model):
     comp4=model["nn_vel_v_z"].layers[1].layers[2].v[200,15]
     return jnp.array([comp1,comp2,comp3,comp4])
 
-def extract_components(chains):
-    num_chains = len(chains)
-    num_models = len(chains[0]) if chains else 0
-    num_components = len(extract_single_model_components(chains[0][0])) if num_models > 0 else 0
+@profile 
+def cumulative_r_hats(components):
+    _, models, _ = components.shape  # Unpack the shape of the array
 
-    # Preallocate array with shape (chains, models, components)
-    components = np.empty((num_chains, num_models, num_components), dtype=np.float64)  # or another dtype if needed
+    cumulative_r_hats = []  # Preallocate with the correct shape
 
-    for i, chain in enumerate(chains):
-        for j, model in enumerate(chain):
-            components[i, j, :] = extract_single_model_components(model)
+    for model_count in range(models):  # Iterate over the models
+    # Increment model_count for non-empty slice
+        cumulative_components = components[:, :model_count + 2, :]  # Shape (chains, model_count + 1, components)
 
-    return components
+    # Calculate R-hat for the current cumulative set of models
+        r_hat = diagnostics.potential_scale_reduction(cumulative_components)
+    
+    # Ensure r_hat can be correctly stored in cumulative_r_hats
+        cumulative_r_hats.append(r_hat)  # Store the result in the preallocated array
 
-def process_samples(directory, number_of_chains):
+    return cumulative_r_hats
+
+@eqx.filter_jit
+def logprob_fn(position, batch):
+    # blackjax calls the parameters which get updated 'position'
+    # batch are objects that can be passed between iterations
+
+    # log prior of DNN parameters
+    # we are using a prior of N(0,1) for these, so we just need log normal
+
+    # you can access the actual NN parameter values like this
+    x=batch[0]
+    y_mag=batch[1]
+    y_phase=batch[2]
+    l2_total = (
+    l2_norm(position["nn_geom"]) + 
+    l2_norm(position["nn_vel_v_x"]) + 
+    l2_norm(position["nn_vel_v_y"]) + 
+    l2_norm(position["nn_vel_v_z"])
+)
+    return  num_obs * jnp.mean(loss_data(position,x,y_mag,y_phase), axis = 0)+ 0.5e3 * l2_total
+
+@profile
+def cumulative_ess(components):
+    _, models,_ = components.shape  # Unpack the shape of the array
+    
+    cumulative_ess =[]  # Preallocate with the correct shape
+
+    for model_count in range(models):  # Iterate over the models
+        # Increment model_count for non-empty slice
+        cumulative_components = components[:, :model_count + 2, :]  # Shape (chains, model_count + 1, components)
+        # Calculate R-hat for the current cumulative set of models
+        ess = diagnostics.effective_sample_size(cumulative_components)
+        
+        # Ensure r_hat can be correctly stored in cumulative_r_hats
+        cumulative_ess.append(ess)  # Store the result in the preallocated array
+
+    return cumulative_ess
+    
+@profile
+def process_samples(directory, number_of_chains,rng_key):
     files=os.listdir(directory)
+    full_file_paths =[os.path.join(directory, file) for file in files]
     total_samples=len(files)
+    num_models=int(total_samples/number_of_chains)
+    num_components=4
     numbers = re.findall(r'\d+', files[0])  # \d+ matches one or more digits
      # Extract the last number, if any
     last_number = numbers[-1] if numbers else None
     thinning=last_number
-    full_file_paths =[os.path.join(directory, file) for file in files]
-    samples=[]
-    for file in full_file_paths:
-        network=eqx.tree_deserialise_leaves(file,params_init)
-        samples.append(network)
+    batch_size=100
+    components = np.empty((number_of_chains, num_models, num_components), dtype=np.float64)
+    log_probabilities=components = np.empty((number_of_chains, num_models),dtype=np.float64)
+    for i in range(number_of_chains):
+        for j in range(num_models):
+            index = j + i * num_models
+            rng_key,batch_key= jax.random.split(rng_key, 2)
+            batch=get_batch(dataset,batch_size,batch_key)
+            network = eqx.tree_deserialise_leaves(full_file_paths[index], params_init)
+            log_prob=logprob_fn(network,batch)
+            log_probabilities[i,j]=log_prob
+            components[i, j, :] = extract_single_model_components(network)
+            del network
     
-    #Fix it from here and down so that the plot functions and the cumulative 
-    #statistics ones match 
-    def cumulative_r_hats(components):
-        _, models, _ = components.shape  # Unpack the shape of the array
-    
-        cumulative_r_hats = []  # Preallocate with the correct shape
-
-        for model_count in range(models):  # Iterate over the models
-        # Increment model_count for non-empty slice
-            cumulative_components = components[:, :model_count + 2, :]  # Shape (chains, model_count + 1, components)
-
-        # Calculate R-hat for the current cumulative set of models
-            r_hat = diagnostics.potential_scale_reduction(cumulative_components)
-        
-        # Ensure r_hat can be correctly stored in cumulative_r_hats
-            cumulative_r_hats.append(r_hat)  # Store the result in the preallocated array
-
-        return cumulative_r_hats
-
-
-    def cumulative_ess(components):
-        _, models,_ = components.shape  # Unpack the shape of the array
-    
-        cumulative_ess =[]  # Preallocate with the correct shape
-
-        for model_count in range(models):  # Iterate over the models
-        # Increment model_count for non-empty slice
-            cumulative_components = components[:, :model_count + 2, :]  # Shape (chains, model_count + 1, components)
-        # Calculate R-hat for the current cumulative set of models
-            ess = diagnostics.effective_sample_size(cumulative_components)
-        
-        # Ensure r_hat can be correctly stored in cumulative_r_hats
-            cumulative_ess.append(ess)  # Store the result in the preallocated array
-
-        return cumulative_ess
-
-
-    chains=break_chain(samples,number_of_chains)
-    components=extract_components(chains)
-    r_hats=cumulative_r_hats(components)
+    if not number_of_chains==1:
+        r_hats=cumulative_r_hats(components)
+        plot_r_hats(r_hats,thinning,number_of_chains)
     ess=cumulative_ess(components)
-    components_samples=[components[:,:,i].flatten() for i in range(4)]
+    components_samples=[components[:,:,i].flatten() for i in range(num_components)]
     plot_components(components_samples,total_samples,thinning)
     plot_correlations(components_samples,total_samples,thinning)
-    plot_r_hats(r_hats,thinning,number_of_chains)
     plot_ess(ess,thinning,number_of_chains)
+    plot_log_probabilities(log_probabilities,thinning,number_of_chains)
+    del components_samples
+    del ess
+    del log_probabilities
+    if 'r_hats' in locals():
+        del r_hats
+    gc.collect()
 
-process_samples("models_no_thinning",4)
+if __name__ == "__main__":
+    process_samples("models",4,rng_key)
+    process_samples("models",1,rng_key)
 
 """# Accessing parameters in FourierFeaturesLayer
 B = geom.layers[0].B  # Accesses the B parameter in FourierFeaturesLayer

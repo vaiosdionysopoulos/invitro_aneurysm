@@ -46,7 +46,6 @@ def plot_components(samples,total_samples,thinning):
     axs[1, 1].set_ylabel(r'$\theta_4$')
     axs[1, 1].grid()
     sns.despine(ax=axs[1,1], trim=True)
-
     # Adjust layout to prevent overlap
     plt.tight_layout()
     if not os.path.exists("runs"):
@@ -122,6 +121,8 @@ def plot_r_hats(r_hat,thinning, number_of_chains):
     # Add a grid for better readability
     plt.grid()
     sns.despine(trim=True)
+    plt.legend(title='Chains')
+    plt.axhline(y=1.1, color='gray', linestyle='--', label='Threshold (1.1)')  # Add horizontal line
 
     # Adjust layout to prevent overlap
     plt.tight_layout()
@@ -139,26 +140,34 @@ def plot_r_hats(r_hat,thinning, number_of_chains):
     
 
 
-def plot_ess(ess,thinning,number_of_chains):
+def plot_ess(ess, thinning, number_of_chains):
     if not os.path.exists("runs"):
         os.makedirs("runs")
-    e1 = [elem[0] for elem in ess]
-    e2 = [elem[1] for elem in ess]
-    e3 = [elem[2] for elem in ess]
-    e4 = [elem[3] for elem in ess]
-    xs=np.arange(1,len(e1)+1,1)
+
+    # Prepare the ESS values for each parameter
+    ess_values = list(zip(*ess))  # Transpose to separate each parameter's ESS values
+    xs = np.arange(1, len(ess_values[0]) + 1, 1)  # Prepare x-axis values
+
     plt.figure(figsize=(10, 6))  # Set the figure size
 
-    # Plotting multiple lines
-    plt.plot(xs, e1, label=r'$\theta_1$', color='blue')  # Line 1
-    plt.plot(xs, e2, label=r'$\theta_2$', color='red')   # Line 2
-    plt.plot(xs, e3, label=r'$\theta_3$', color='green') # Line 3
-    plt.plot(xs, e4, label=r'$\theta_4$', color='brown') # Line 4
+    # Define an array of colors for chains
+    color_array = ['blue', 'red', 'green', 'brown', 'orange', 'purple', 'cyan', 'magenta']  # Extend as needed
 
+    # Check if there is only one chain
+    if number_of_chains == 1:
+        plt.plot(xs, ess_values[0], label=r'$\theta_1$', color=color_array[0])  # Plot single chain
+    else:
+        # Plotting lines for each parameter based on number of models
+        for i in range(len(ess_values)):
+            color = color_array[i % len(color_array)]  # Cycle through colors
+            plt.plot(xs, ess_values[i], label=f'Chain {i + 1}', color=color)  # Dynamic label for each chain
+
+        # Add a legend only if there are multiple chains
+        plt.legend(title='Chains')  # Title for the legend
 
     # Add titles and labels
     plt.title('Value of ESS over number of samples')
-    plt.xlabel('samples')
+    plt.xlabel('Samples')
     plt.ylabel('ESS')
 
     # Add a grid for better readability
@@ -167,17 +176,64 @@ def plot_ess(ess,thinning,number_of_chains):
 
     # Adjust layout to prevent overlap
     plt.tight_layout()
-    if not os.path.exists("runs"):
-        os.makedirs("runs")
-    # Save the figure
-    number_of_models=len(ess[0])
-    save_directory = os.path.join(os.getcwd(), "runs")  # Saves in the 'runs' folder in the current directory
-    save_filename = f"ESS_plots_for_{number_of_chains}_chains_{number_of_models}_models_each_thinning_{thinning}.png"               
 
-    # Combine the directory and filename
+    # Save the figure
+    number_of_models = len(ess[0])  # Number of models based on ess
+    save_directory = os.path.join(os.getcwd(), "runs")  # Saves in the 'runs' folder in the current directory
+    save_filename = f"ESS_plots_for_{number_of_chains}_chains_{number_of_models}_models_each_thinning_{thinning}.png"
+
     full_save_path = os.path.join(save_directory, save_filename)
+
     # Save the figure
     plt.savefig(full_save_path, dpi=300)
-    
+    plt.close()  # Close the plot to free memory if plotting multiple times
 
-   
+def plot_log_probabilities(log_probs, thinning, number_of_chains):
+    if not os.path.exists("runs"):
+        os.makedirs("runs")
+
+    # Prepare the log-probabilities values
+    log_probs_values = log_probs  # Assuming log_probs is shaped (chains, models)
+    xs = np.arange(1, log_probs_values.shape[1] + 1, 1)  # Prepare x-axis values
+
+    plt.figure(figsize=(10, 6))  # Set the figure size
+
+    # Define an array of colors for chains
+    color_array = ['blue', 'red', 'green', 'brown', 'orange', 'purple', 'cyan', 'magenta']  # Extend as needed
+
+    # Check if there is only one chain
+    if number_of_chains == 1:
+        # Flatten the array for a single chain
+        flattened_log_probs = log_probs_values.flatten()  # Flatten to a 1D array
+        plt.plot(xs, flattened_log_probs, label='Log-Probabilities', color=color_array[0])  # Plot single chain
+    else:
+        # Plotting lines for each chain
+        for i in range(number_of_chains):
+            color = color_array[i % len(color_array)]  # Cycle through colors
+            plt.plot(xs, log_probs_values[i], label=f'Chain {i + 1}', color=color)  # Dynamic label for each chain
+
+        # Add a legend
+        plt.legend(title='Chains')  # Title for the legend
+
+    # Add titles and labels
+    plt.title('Log-Probabilities over Number of Samples')
+    plt.xlabel('Samples')
+    plt.ylabel('Log-Probability')
+
+    # Add a grid for better readability
+    plt.grid()
+    sns.despine(trim=True)
+
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
+
+    # Save the figure
+    number_of_models = log_probs_values.shape[1]  # Number of models based on log_probs
+    save_directory = os.path.join(os.getcwd(), "runs")  # Saves in the 'runs' folder in the current directory
+    save_filename = f"log_prob_plots_for_{number_of_chains}_chains_{number_of_models}_models_each_thinning_{thinning}.png"
+
+    full_save_path = os.path.join(save_directory, save_filename)
+
+    # Save the figure
+    plt.savefig(full_save_path, dpi=300)
+    plt.close()  # Close the plot to free memory if plotting multiple times

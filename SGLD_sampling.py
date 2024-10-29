@@ -42,7 +42,7 @@ nt = data["nt"]
 constant_num_points = data_spatial_points.shape[0]
 constant_num_timesteps =data_time_values.shape[0]
 num_obs=constant_num_points*constant_num_timesteps
-
+dataset=CombinedTimeStepDataset(data_spatial_points, data_mag_values, data_phase_values, data_time_values)
 
 #sampling function takes SGLG samples every thinning_factor iterations
 def sgld_sampling(theta_init,
@@ -51,7 +51,6 @@ def sgld_sampling(theta_init,
                 rng_key,temperature=1.0):
     
     a1, a2, c = lr_package
-    dataset=CombinedTimeStepDataset(data_spatial_points, data_mag_values, data_phase_values, data_time_values)
     # log posterior model 
     @eqx.filter_jit
     def logprob_fn(position, batch):

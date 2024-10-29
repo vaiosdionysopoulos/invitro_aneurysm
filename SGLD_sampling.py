@@ -15,7 +15,7 @@ from functools import partial
 import equinox as eqx
 import pickle
 import os
-from SGLD_prototype import CombinedTimeStepDataset,get_batch,lr_schedule,loss_data,l2_norm,params_init
+from SGLD_prototype import *
 
 rng_key=jax.random.PRNGKey(1)
 # # Data
@@ -51,40 +51,7 @@ def sgld_sampling(theta_init,
                 rng_key,temperature=1.0):
     
     a1, a2, c = lr_package
-    # log posterior model 
-    @eqx.filter_jit
-    def logprob_fn(position, batch):
-        # blackjax calls the parameters which get updated 'position'
-        # batch are objects that can be passed between iterations
-
-        # log prior of DNN parameters
-        # we are using a prior of N(0,1) for these, so we just need log normal
-
-        # you can access the actual NN parameter values like this
-        x=batch[0]
-        y_mag=batch[1]
-        y_phase=batch[2]
-        l2_total = (
-        l2_norm(position["nn_geom"]) + 
-        l2_norm(position["nn_vel_v_x"]) + 
-        l2_norm(position["nn_vel_v_y"]) + 
-        l2_norm(position["nn_vel_v_z"])
-    )
-        return  num_obs * jnp.mean(loss_data(position,x,y_mag,y_phase), axis = 0)+ 0.5e3 * l2_total
-    
-
-    def gradient_clip_threshold(iter_, max_clip=1, decay_factor=0.99):
-        return max_clip * (decay_factor ** iter_)
-    @eqx.filter_jit
-    def grad_estimator(p, batch, clip_val=4.):
-        """ Compute clipped estimate of gradient of log probability """
-        # Call the JIT compiled gradient function
-        _,g =eqx.filter_value_and_grad(logprob_fn)(p,batch)
-        
-        # Clipping the gradient
-        return jtu.tree_map(ft.partial(jnp.clip, a_min=-clip_val, a_max=clip_val), g)
-
-    # build the SGLD sampler now
+  
     sgld = blackjax.sgld(grad_estimator)
     sgld_step = eqx.filter_jit(sgld.step)
     position = sgld.init(theta_init)

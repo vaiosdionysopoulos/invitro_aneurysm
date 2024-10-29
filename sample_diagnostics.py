@@ -10,8 +10,8 @@ from plots_MCMC import *
 from SGLD_prototype import params_init
 from memory_profiler import profile
 import gc
-from SGLD_prototype import get_batch,loss_data,l2_norm
-from SGLD_sampling import dataset, num_obs
+from SGLD_prototype import get_batch,logprob_fn
+from SGLD_sampling import dataset
 
 
 rng_key=jax.random.PRNGKey(2)
@@ -41,25 +41,6 @@ def cumulative_r_hats(components):
 
     return cumulative_r_hats
 
-@eqx.filter_jit
-def logprob_fn(position, batch):
-    # blackjax calls the parameters which get updated 'position'
-    # batch are objects that can be passed between iterations
-
-    # log prior of DNN parameters
-    # we are using a prior of N(0,1) for these, so we just need log normal
-
-    # you can access the actual NN parameter values like this
-    x=batch[0]
-    y_mag=batch[1]
-    y_phase=batch[2]
-    l2_total = (
-    l2_norm(position["nn_geom"]) + 
-    l2_norm(position["nn_vel_v_x"]) + 
-    l2_norm(position["nn_vel_v_y"]) + 
-    l2_norm(position["nn_vel_v_z"])
-)
-    return  num_obs * jnp.mean(loss_data(position,x,y_mag,y_phase), axis = 0)+ 0.5e3 * l2_total
 
 @profile
 def cumulative_ess(components):
@@ -91,7 +72,7 @@ def process_samples(directory, number_of_chains,rng_key):
     thinning=last_number
     batch_size=100
     components = np.empty((number_of_chains, num_models, num_components), dtype=np.float64)
-    log_probabilities=components = np.empty((number_of_chains, num_models),dtype=np.float64)
+    log_probabilities = np.empty((number_of_chains, num_models),dtype=np.float64)
     for i in range(number_of_chains):
         for j in range(num_models):
             index = j + i * num_models

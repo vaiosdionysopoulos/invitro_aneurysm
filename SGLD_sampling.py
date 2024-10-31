@@ -15,33 +15,8 @@ from functools import partial
 import equinox as eqx
 import pickle
 import os
-from SGLD_prototype import *
+from config import *
 
-rng_key=jax.random.PRNGKey(1)
-# # Data
-with open("data_mri.pkl", 'rb') as f:
-    data = pickle.load(f)
-    
-#I HAVE TO MAKE EVRYTHING JAX IN THE BEGINNING NOT IN THE STEP_SCAN
-
-data_spatial_points = data["spatial_points"]
-data_time_values =data["time_values"]
-data_mag_values = data["mag_values"]
-data_phase_values = data["phase_values"]
-
-sigma_mag = 0.002
-sigma_phase_x = 0.002
-sigma_phase_y = 0.002
-sigma_phase_z = 0.002
-
-x_size = data["nx"]
-y_size = data["ny"]
-z_size = data["nz"]
-nt = data["nt"]
-
-constant_num_points = data_spatial_points.shape[0]
-constant_num_timesteps =data_time_values.shape[0]
-num_obs=constant_num_points*constant_num_timesteps
 dataset=CombinedTimeStepDataset(data_spatial_points, data_mag_values, data_phase_values, data_time_values)
 
 #sampling function takes SGLG samples every thinning_factor iterations
@@ -79,8 +54,8 @@ def sgld_sampling(theta_init,
     current_iter = 0
     init = (position, rng_key)
     if thinning_factor==1:
-        if not os.path.exists("models_no_thinning"):
-            os.makedirs("models_no_thinning")
+        if not os.path.exists("models_no_thinning_trained_params"):
+            os.makedirs("models_no_thinning_trained_params")
     else:
         if not os.path.exists("models"):
                 os.makedirs("models")
@@ -91,7 +66,7 @@ def sgld_sampling(theta_init,
     for i in range(total_samples):
         iter, new_sample, rng_key = last_sample(current_iter, init)
         if no_thinning:
-            eqx.tree_serialise_leaves(f"models_no_thinning/SGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample)  # Directly set the dictionary in the preallocated list
+            eqx.tree_serialise_leaves(f"models_no_thinning_trained_params/SGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample)  # Directly set the dictionary in the preallocated list
         else:
             eqx.tree_serialise_leaves(f"models/SGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample)
         current_iter = iter
@@ -106,7 +81,8 @@ def sgld_sampling(theta_init,
 #of the sampling.
 def main():
     lr_package = (0.01, 0.51, 0.001)
-    theta_init= eqx.filter(params_init, eqx.is_array)
+    params=eqx.tree_deserialise_leaves("runs/params_trained_bs_34830_num_classes_2.eqx",params_init)
+    theta_init=eqx.filter(params,eqx.is_array)
     batch_size=int(0.05*num_obs)
     total_samples=10000
     thinning=1
@@ -117,39 +93,4 @@ def main():
 if __name__=="__main__":
     main()
    
-
-"""samples = [{} for _ in range(total_samples)]
-    current_iter = 0
-    init = (position, rng_key)
-
-    # Calculates and stores the samples in the list of dictionaries "samples"
-    for i in range(total_samples):
-        iter, new_sample, rng_key = last_sample(current_iter, init)
-        samples[i] = new_sample  # Directly set the dictionary in the preallocated list
-        current_iter = iter
-        init = (new_sample, rng_key)
-
-    return samples
-
-#We define the learning rate package that dicatetes the learning rate at each step 
-#and the initial position. User may chaing name of file (make sure the saved pytree has 
-#the same structure as the initial model, meaning params_init), as well as the other parametres
-#of the sampling.
-def main():
-    lr_package = (0.01, 0.51, 0.001)
-    trained_params=eqx.tree_deserialise_leaves("runs/params_trained_bs_100_num_classes_2.eqx",params_init)
-    theta_init= eqx.filter(trained_params, eqx.is_array)
-    batch_size=1000
-    total_samples=200
-    thinning=10
-    mysamples=sgld_sampling(theta_init,batch_size,total_samples,thinning,lr_package,rng_key)
-
-    num_models = len(mysamples)
-
-    networks = {
-        f"model_{i}": nn for i, nn in enumerate(mysamples)
-    }
-
-
-    eqx.tree_serialise_leaves(f"runs/SGLD_samples_{num_models}_batch_size_{batch_size}_thinning_{thinning}.eqx",networks)"""
 

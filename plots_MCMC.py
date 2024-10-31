@@ -12,7 +12,7 @@ import jax.numpy as jnp
 
 #I have to make the titles be dynamically defined depending on the statistic I want 
 
-def plot_components(samples,total_samples,thinning):
+def plot_components(samples,total_samples,thinning,directory):
     samples1,samples2,samples3,samples4=samples
     iterations=np.arange(1, total_samples+1,1)
     fig, axs = plt.subplots(2, 2, figsize=(10, 8))
@@ -51,7 +51,7 @@ def plot_components(samples,total_samples,thinning):
     if not os.path.exists("runs"):
         os.makedirs("runs")
     # Save the figure
-    save_directory = os.path.join(os.getcwd(), "runs")  # Saves in the 'runs' folder in the current directory
+    save_directory = directory  # Saves in the 'runs' folder in the current directory
     save_filename = f"Components_plot_random_components_samples_{total_samples}_thinning_{thinning}.png"                # Name of the file
 
     # Combine the directory and filename
@@ -61,7 +61,7 @@ def plot_components(samples,total_samples,thinning):
     
     
 
-def plot_correlations(samples,total_samples,thinning):
+def plot_correlations(samples,total_samples,thinning,directory):
 
     samples1,samples2,samples3,samples4=samples
     iterations=np.arange(1, total_samples+1, 1)
@@ -87,7 +87,7 @@ def plot_correlations(samples,total_samples,thinning):
     if not os.path.exists("runs"):
         os.makedirs("runs")
     # Save the figure
-    save_directory = os.path.join(os.getcwd(), "runs")  # Saves in the 'runs' folder in the current directory
+    save_directory = directory  # Saves in the 'runs' folder in the current directory
     save_filename1 = f"autocorrelations_of_thetas_samples_{total_samples}_thinning{thinning}.png"
 
     # Combine the directory and filename
@@ -96,7 +96,7 @@ def plot_correlations(samples,total_samples,thinning):
     plt.savefig(full_save_path, dpi=300)
 
 #Takes a list of arrays of the r_hat of the components and plots each component's r_hat
-def plot_r_hats(r_hat,thinning, number_of_chains):
+def plot_r_hats(r_hat,thinning, number_of_chains, directory):
     if not os.path.exists("runs"):
         os.makedirs("runs")
     r1 = [r[0] for r in r_hat]
@@ -126,11 +126,8 @@ def plot_r_hats(r_hat,thinning, number_of_chains):
 
     # Adjust layout to prevent overlap
     plt.tight_layout()
-    if not os.path.exists("runs"):
-        os.makedirs("runs")
-    # Save the figure
     number_of_models=len(r_hat)
-    save_directory = os.path.join(os.getcwd(), "runs")  # Saves in the 'runs' folder in the current directory
+    save_directory = directory  # Saves in the 'runs' folder in the current directory
     save_filename = f"R_hat_plots_for_{number_of_chains}_chains_{number_of_models}_models_each_thinning_{thinning}.png"               
 
     # Combine the directory and filename
@@ -140,11 +137,9 @@ def plot_r_hats(r_hat,thinning, number_of_chains):
     
 
 
-def plot_ess(ess, thinning, number_of_chains):
-    if not os.path.exists("runs"):
-        os.makedirs("runs")
-
-    # Prepare the ESS values for each parameter
+def plot_ess(ess, thinning, number_of_chains, directory):
+    
+   # Prepare the ESS values for each parameter
     ess_values = list(zip(*ess))  # Transpose to separate each parameter's ESS values
     xs = np.arange(1, len(ess_values[0]) + 1, 1)  # Prepare x-axis values
 
@@ -179,7 +174,7 @@ def plot_ess(ess, thinning, number_of_chains):
 
     # Save the figure
     number_of_models = len(ess[0])  # Number of models based on ess
-    save_directory = os.path.join(os.getcwd(), "runs")  # Saves in the 'runs' folder in the current directory
+    save_directory = directory  # Saves in the 'runs' folder in the current directory
     save_filename = f"ESS_plots_for_{number_of_chains}_chains_{number_of_models}_models_each_thinning_{thinning}.png"
 
     full_save_path = os.path.join(save_directory, save_filename)
@@ -188,7 +183,7 @@ def plot_ess(ess, thinning, number_of_chains):
     plt.savefig(full_save_path, dpi=300)
     plt.close()  # Close the plot to free memory if plotting multiple times
 
-def plot_log_probabilities(log_probs, thinning, number_of_chains):
+def plot_log_probabilities(log_probs, thinning, number_of_chains, directory):
     if not os.path.exists("runs"):
         os.makedirs("runs")
 
@@ -216,7 +211,7 @@ def plot_log_probabilities(log_probs, thinning, number_of_chains):
         plt.legend(title='Chains')  # Title for the legend
 
     # Add titles and labels
-    plt.title('Log-Probabilities over Number of Samples')
+    plt.title('Log-Probabilities for different chains')
     plt.xlabel('Samples')
     plt.ylabel('Log-Probability')
 
@@ -229,8 +224,37 @@ def plot_log_probabilities(log_probs, thinning, number_of_chains):
 
     # Save the figure
     number_of_models = log_probs_values.shape[1]  # Number of models based on log_probs
-    save_directory = os.path.join(os.getcwd(), "runs")  # Saves in the 'runs' folder in the current directory
+    save_directory = directory  # Saves in the 'runs' folder in the current directory
     save_filename = f"log_prob_plots_for_{number_of_chains}_chains_{number_of_models}_models_each_thinning_{thinning}.png"
+
+    full_save_path = os.path.join(save_directory, save_filename)
+
+    # Save the figure
+    plt.savefig(full_save_path, dpi=300)
+    plt.close()  # Close the plot to free memory if plotting multiple times
+
+def plot_log_prob_different_models(log_probs, thinning, directory):
+    label_names = ['SGLD', 'PSGLD', 'CSGLD']
+
+    plt.figure(figsize=(10, 6))
+
+    # Plot each array in the list
+    for (log_probs, label) in enumerate(zip(log_probs, label_names)):
+        plt.plot(log_probs, label=label)  # Use label from the list
+    
+    plt.xlabel('Samples')
+    plt.ylabel('Log Probability')
+    plt.title('Log Probability across methods')
+    plt.legend(title="Methods")  # Show the legend
+    plt.grid(True)  # Add grid for better readability
+    sns.despine(trim=True)
+
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
+
+    # Save the figure  
+    save_directory = directory  # Saves in the 'runs' folder in the current directory
+    save_filename = f"log_prob_plots_for_different_methods_thinning_{thinning}.png"
 
     full_save_path = os.path.join(save_directory, save_filename)
 

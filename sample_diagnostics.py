@@ -7,14 +7,10 @@ import equinox as eqx
 import os
 import re 
 from plots_MCMC import *
-from SGLD_prototype import params_init
+from config import *
 from memory_profiler import profile
 import gc
-from SGLD_prototype import get_batch,logprob_fn
 from SGLD_sampling import dataset
-
-
-rng_key=jax.random.PRNGKey(2)
 
 def extract_single_model_components(model):
     comp1=model["nn_geom"].layers[1].layers[0].v[10,78]
@@ -58,9 +54,10 @@ def cumulative_ess(components):
         cumulative_ess.append(ess)  # Store the result in the preallocated array
 
     return cumulative_ess
-    
+
+
 @profile
-def process_samples(directory, number_of_chains,rng_key):
+def process_samples(directory, dataset, number_of_chains, params_structure, rng_key):
     files=os.listdir(directory)
     full_file_paths =[os.path.join(directory, file) for file in files]
     total_samples=len(files)
@@ -70,6 +67,7 @@ def process_samples(directory, number_of_chains,rng_key):
      # Extract the last number, if any
     last_number = numbers[-1] if numbers else None
     thinning=last_number
+    #Batch size for log probability calculation
     batch_size=100
     components = np.empty((number_of_chains, num_models, num_components), dtype=np.float64)
     log_probabilities = np.empty((number_of_chains, num_models),dtype=np.float64)
@@ -78,7 +76,7 @@ def process_samples(directory, number_of_chains,rng_key):
             index = j + i * num_models
             rng_key,batch_key= jax.random.split(rng_key, 2)
             batch=get_batch(dataset,batch_size,batch_key)
-            network = eqx.tree_deserialise_leaves(full_file_paths[index], params_init)
+            network = eqx.tree_deserialise_leaves(full_file_paths[index], params_structure)
             log_prob=logprob_fn(network,batch)
             log_probabilities[i,j]=log_prob
             components[i, j, :] = extract_single_model_components(network)
@@ -100,31 +98,50 @@ def process_samples(directory, number_of_chains,rng_key):
         del r_hats
     gc.collect()
 
+#Log probabilities graphs for samples coming from different SGLD variants 
+def compare_methods(directories, dataset, params_structure):
+    all_log_probabilities = []
+
+    for directory in directories:
+        # List files in the current directory
+        files = os.listdir(directory)
+        full_file_paths = [os.path.join(directory, file) for file in files]
+        total_samples=len(files)
+        numbers = re.findall(r'\d+', files[0])  # \d+ matches one or more digits
+        batch_size=100
+
+        # Extract the last number from the first file to determine thinning
+        numbers = re.findall(r'\d+', files[0])  # \d+ matches one or more digits
+        last_number = numbers[-1] if numbers else None
+        thinning = last_number
+        
+        # Initialize arrays for log probabilities and components
+        log_probabilities = np.empty((total_samples), dtype=np.float64)
+        for index in total_samples:
+        
+            rng_key, batch_key = jax.random.split(rng_key, 2)
+            batch = get_batch(dataset, batch_size, batch_key)
+            
+            # Deserialize the neural network from the file
+            network = eqx.tree_deserialise_leaves(full_file_paths[index], params_structure)
+            
+            # Compute log probability
+            log_prob = logprob_fn(network, batch)
+            log_probabilities[index] = log_prob
+            
+            # Cleanup
+            del network
+        
+        # Store results for this directory
+        all_log_probabilities.append(log_probabilities)
+        
+    plot_log_prob_different_models(all_log_probabilities, thinning, directory)
+    
+    
+
+
+dataset=CombinedTimeStepDataset(data_spatial_points, data_mag_values, data_phase_values, data_time_values)
 if __name__ == "__main__":
-    process_samples("models",4,rng_key)
-    process_samples("models",1,rng_key)
+    process_samples("/workspaces/codespaces-blank/invitro_aneurysm/runs/Preconditioned-SGLD/models_no_thinning", dataset,1, params_init, rng_key)
+    
 
-"""# Accessing parameters in FourierFeaturesLayer
-B = geom.layers[0].B  # Accesses the B parameter in FourierFeaturesLayer
-
-# Accessing parameters in MLPModified's u_layer
-u_layer_weights = geom.layers[1].u_layer.v
-u_layer_bias = geom.layers[1].u_layer.bias
-
-# Accessing parameters in MLPModified's v_layer
-v_layer_weights = geom.layers[1].v_layer.v
-v_layer_bias = geom.layers[1].v_layer.bias
-
-# Accessing weights and biases of individual layers in the layers list
-layer1_weights = geom.layers[1].layers[0].v
-layer1_bias = geom.layers[1].layers[0].bias
-
-layer2_weights = geom.layers[1].layers[1].v
-layer2_bias = geom.layers[1].layers[1].bias
-
-layer3_weights = geom.layers[1].layers[2].v
-layer3_bias = geom.layers[1].layers[2].bias
-
-# Accessing the final layer's weights and biases
-final_layer_weights = geom.layers[1].final_layer.v
-final_layer_bias = geom.layers[1].final_layer.bias"""

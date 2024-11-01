@@ -17,7 +17,7 @@ import pickle
 import os
 from config import *
 
-dataset=CombinedTimeStepDataset(data_spatial_points, data_mag_values, data_phase_values, data_time_values)
+dataset=CombinedTimeStepDataset(data_spatial_points, data_mag_values, data_phase_values, data_time_values, )
 
 #sampling function takes SGLG samples every thinning_factor iterations
 def sgld_sampling(theta_init,
@@ -81,11 +81,10 @@ def sgld_sampling(theta_init,
 #of the sampling.
 def main():
     lr_package = (0.01, 0.51, 0.001)
-    params=eqx.tree_deserialise_leaves("runs/params_trained_bs_34830_num_classes_2.eqx",params_init)
-    theta_init=eqx.filter(params,eqx.is_array)
+    theta_init=eqx.filter(params_init,eqx.is_array)
     batch_size=int(0.05*num_obs)
-    total_samples=10000
-    thinning=1
+    total_samples=10
+    thinning=5
     sgld_sampling(theta_init,batch_size,total_samples,thinning,lr_package,rng_key)
 
     

@@ -124,19 +124,19 @@ params_init = {
                           depth=4, 
                           activation=jax.nn.tanh, 
                           key=sub_key_geom),
-    "mu": jnp.array((1.1, 0.1)),
+    "mu": jnp.array([1.1, 0.1]),
     "sigma": sigma_mag * jnp.ones(num_classes),
     "sigmas_v": jnp.array([[sigma_phase_x, sigma_phase_y, sigma_phase_z]]) * jnp.ones((num_classes, 3)),
 }
 
-def lr_schedule(iter_, a0=0.05, a1=0.51, c=0.1, warmup_iters=100):
+def lr_schedule(iter_, a0=0.1, a1=0.40, c=0.2, warmup_iters=100, min_lr=1e-6, max_lr=0.8):
     lr = jax.lax.cond(
         iter_ < warmup_iters,
         lambda x: a0 * (x / warmup_iters),  # Warmup: linear increase
         lambda x: a0 / (x + c) ** a1,        # Decay schedule
         iter_  # The value to pass to the lambda functions
     )
-    return lr
+    return jnp.clip(lr, min_lr, max_lr)
 
 @partial(vmap, in_axes=(None,0,0,0))
 def loss_data(
@@ -157,20 +157,16 @@ def loss_data(
     # Evaluate geometry field at x
     g_logits = nn_geom(x)
     g_prob_log = jax.nn.log_softmax(g_logits)
-    print("g_prob_log:",g_prob_log)
     # Evaluate velocity field at x
     vel_v_x = nn_vel_v_x(x)
     vel_v_y = nn_vel_v_y(x)
     vel_v_z = nn_vel_v_z(x)
     velocity = jnp.concatenate((vel_v_x, vel_v_y, vel_v_z))
-    print("Velocity:",velocity)
-    print("All good")
     # Magnitude data loss calculation
     log_normalizer_mag = -0.5 * jnp.log(2 * jnp.pi * sigma**2)
     log_exp_terms_mag = -0.5 * ((y_mag - mu) ** 2) / sigma**2
     log_terms_mag = log_normalizer_mag + log_exp_terms_mag + g_prob_log
     loss_mag = -jax.scipy.special.logsumexp(log_terms_mag)
-    print("Loss mag:",loss_mag)
     # Phase (velocity) data loss calculation
     log_normalizer_phase = -0.5 * jnp.log(2 * jnp.pi * sigmas_v**2) # Shape (num_classes, 3)
     log_exp_terms_phase = -0.5 * ((y_phase - velocity) ** 2) / sigmas_v**2  # Shape (num_classes, 3)
@@ -178,7 +174,6 @@ def loss_data(
     temp = (log_normalizer_phase + log_exp_terms_phase).sum(axis=1)  # Shape (num_classes,)
     log_terms_phase = temp + g_prob_log
     loss_phase = -jax.scipy.special.logsumexp(log_terms_phase)
-    print("Loss phase:",loss_phase)
     return loss_phase+loss_mag 
 
 def l2_norm(params):  
@@ -210,7 +205,7 @@ def logprob_fn(position, batch):
     return  num_obs * jnp.mean(loss_data(position,x,y_mag,y_phase), axis = 0)+ 0.5e3 * l2_total
 
 @eqx.filter_jit
-def grad_estimator(p, batch, clip_val=3.):
+def grad_estimator(p, batch, clip_val=1.):
     """ Compute clipped estimate of gradient of log probability """
     # Call the JIT compiled gradient function
     _,g =eqx.filter_value_and_grad(logprob_fn)(p,batch)

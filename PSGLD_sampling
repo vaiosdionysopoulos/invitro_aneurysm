@@ -91,9 +91,9 @@ def psgld_sampling(theta_init,
     for i in range(total_samples):
         iter, new_sample, rng_key = last_sample(current_iter, init)
         if no_thinning:
-            eqx.tree_serialise_leaves(f"runs/Preconditioned-SGLD/models_no_thinning/PSGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample) 
+            eqx.tree_serialise_leaves(f"test/PSGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample) 
         else:
-            eqx.tree_serialise_leaves(f"runs/Preconditioned-SGLD/models/SGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample)
+            eqx.tree_serialise_leaves(f"test/PSGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample)
         current_iter = iter
         init = (new_sample, rng_key)
         order+=1
@@ -107,9 +107,9 @@ def psgld_sampling(theta_init,
 def main():
     lr_package = (0.01, 0.51, 0.001)
     theta_init=eqx.filter(params_init,eqx.is_array)
-    batch_size=100
-    total_samples=40
-    thinning=1
+    batch_size=10
+    total_samples=10
+    thinning=5
     psgld_sampling(theta_init,batch_size,total_samples,thinning,lr_package,rng_key)
 
     

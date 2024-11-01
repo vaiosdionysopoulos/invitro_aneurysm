@@ -14,17 +14,17 @@ import jax.numpy as jnp
 
 def plot_components(samples,total_samples,thinning,directory):
     samples1,samples2,samples3,samples4=samples
-    iterations=np.arange(1, total_samples+1,1)
+    iterations=np.arange(1, total_samples*thinning+1,thinning)
     fig, axs = plt.subplots(2, 2, figsize=(10, 8))
     # Plot the first graph
-    axs[0, 0].plot(iterations, samples1, 'b-')
+    axs[0, 0].scatter(iterations, samples1, color='blue', alpha=0.7)
     axs[0, 0].set_title(r'$\theta_1$ over iterations')
     axs[0, 0].set_xlabel('iterations')
     axs[0, 0].set_ylabel(r'$\theta_1$')
     axs[0, 0].grid()
     sns.despine(ax=axs[0, 0], trim=True)
     # Plot the second graph
-    axs[0, 1].plot(iterations,samples2, 'r-')
+    axs[0, 1].scatter(iterations,samples2, color='red', alpha=0.7)
     axs[0, 1].set_title(r'$\theta_2$ over iterations')
     axs[0, 1].set_xlabel('iterations')
     axs[0, 1].set_ylabel(r'$\theta_2$')
@@ -32,7 +32,7 @@ def plot_components(samples,total_samples,thinning,directory):
     sns.despine(ax=axs[0, 1], trim=True)
 
     # Plot the third graph
-    axs[1, 0].plot(iterations, samples3, 'g-')
+    axs[1, 0].scatter(iterations, samples3, color='green', alpha=0.7)
     axs[1, 0].set_title(r'$\theta_3$ over iterations')
     axs[1, 0].set_xlabel(r'$\theta_3$')
     axs[1, 0].set_ylabel('iterations')
@@ -40,7 +40,7 @@ def plot_components(samples,total_samples,thinning,directory):
     sns.despine(ax=axs[1,0], trim=True)
 
     # Plot the fourth graph
-    axs[1, 1].plot(iterations,samples4, 'm-')
+    axs[1, 1].scatter(iterations,samples4, color='magenta', alpha=0.7)
     axs[1, 1].set_title(r'$\theta_1$ over iterations')
     axs[1, 1].set_xlabel('iterations')
     axs[1, 1].set_ylabel(r'$\theta_4$')
@@ -64,24 +64,25 @@ def plot_components(samples,total_samples,thinning,directory):
 def plot_correlations(samples,total_samples,thinning,directory):
 
     samples1,samples2,samples3,samples4=samples
-    iterations=np.arange(1, total_samples+1, 1)
     fig1, axs1 = plt.subplots(2, 2, figsize=(10, 8))
 
     # Plot ACF for data1
-    plot_acf(samples1,lags=iterations-1, ax=axs1[0, 0])
+    plot_acf(samples1,lags=len(samples1)-1, ax=axs1[0, 0])
     axs1[0, 0].set_title('ACF of 'r'$\theta_1$')
 
     # Plot PACF for data1
-    plot_acf(samples2,lags=iterations-1, ax=axs1[0, 1])
+    plot_acf(samples2,lags=len(samples2)-1, ax=axs1[0, 1])
     axs1[0, 1].set_title('ACF of 'r'$\theta_2$')
 
     # Plot ACF for data2
-    plot_acf(samples3,lags=iterations-1, ax=axs1[1, 0])
+    plot_acf(samples3,lags=len(samples3)-1, ax=axs1[1, 0])
     axs1[1, 0].set_title('ACF of 'r'$\theta_3$')
 
     # Plot PACF for data2
-    plot_acf(samples4,lags=iterations-1, ax=axs1[1, 1])
+    plot_acf(samples4,lags=len(samples4)-1, ax=axs1[1, 1])
     axs1[1, 1].set_title('ACF of 'r'$\theta_4$')
+
+    plt.title("Autocorrelation for each component chain ")
 
     plt.tight_layout()
     if not os.path.exists("runs"):
@@ -103,25 +104,25 @@ def plot_r_hats(r_hat,thinning, number_of_chains, directory):
     r2 = [r[1] for r in r_hat]
     r3 = [r[2] for r in r_hat]
     r4 = [r[3] for r in r_hat]
-    xs=np.arange(1,len(r1)+1,1)
+    xs=np.arange(1,len(r1)*thinning+1,thinning)
     plt.figure(figsize=(10, 6))  # Set the figure size
 
     # Plotting multiple lines
-    plt.plot(xs, r1, label=r'$\theta_1$', color='blue')  # Line 1
-    plt.plot(xs, r2, label=r'$\theta_2$', color='red')   # Line 2
-    plt.plot(xs, r3, label=r'$\theta_3$', color='green') # Line 3
-    plt.plot(xs, r4, label=r'$\theta_4$', color='brown') # Line 4
+    plt.scatter(xs, r1, label=r'$\theta_1$', color='blue', alpha=0.7)  # Line 1
+    plt.scatter(xs, r2, label=r'$\theta_2$', color='red', alpha=0.7)   # Line 2
+    plt.scatter(xs, r3, label=r'$\theta_3$', color='green', alpha=0.7) # Line 3
+    plt.scatter(xs, r4, label=r'$\theta_4$', color='brown', alpha=0.7) # Line 4
 
 
     # Add titles and labels
     plt.title(r'Value of $\hat{R}$ over number of samples')
-    plt.xlabel('samples')
+    plt.xlabel('Iterations')
     plt.ylabel(r'$\hat{R}$')
 
     # Add a grid for better readability
     plt.grid()
     sns.despine(trim=True)
-    plt.legend(title='Chains')
+    plt.legend(title='Thetas')
     plt.axhline(y=1.1, color='gray', linestyle='--', label='Threshold (1.1)')  # Add horizontal line
 
     # Adjust layout to prevent overlap
@@ -141,7 +142,7 @@ def plot_ess(ess, thinning, number_of_chains, directory):
     
    # Prepare the ESS values for each parameter
     ess_values = list(zip(*ess))  # Transpose to separate each parameter's ESS values
-    xs = np.arange(1, len(ess_values[0]) + 1, 1)  # Prepare x-axis values
+    xs = np.arange(1, len(ess_values[0])*thinning + 1, thinning)  # Prepare x-axis values
 
     plt.figure(figsize=(10, 6))  # Set the figure size
 
@@ -150,19 +151,19 @@ def plot_ess(ess, thinning, number_of_chains, directory):
 
     # Check if there is only one chain
     if number_of_chains == 1:
-        plt.plot(xs, ess_values[0], label=r'$\theta_1$', color=color_array[0])  # Plot single chain
+        plt.scatter(xs, ess_values[0], label=r'$\theta_1$', color=color_array[0], alpha=0.7)  # Plot single chain
     else:
         # Plotting lines for each parameter based on number of models
         for i in range(len(ess_values)):
             color = color_array[i % len(color_array)]  # Cycle through colors
-            plt.plot(xs, ess_values[i], label=f'Chain {i + 1}', color=color)  # Dynamic label for each chain
+            plt.scatter(xs, ess_values[i], label=f'Chain {i + 1}', color=color, alpha=0.7)  # Dynamic label for each chain
 
         # Add a legend only if there are multiple chains
-        plt.legend(title='Chains')  # Title for the legend
+        plt.legend(title='Thetas')  # Title for the legend
 
     # Add titles and labels
     plt.title('Value of ESS over number of samples')
-    plt.xlabel('Samples')
+    plt.xlabel('Iterations')
     plt.ylabel('ESS')
 
     # Add a grid for better readability
@@ -189,7 +190,7 @@ def plot_log_probabilities(log_probs, thinning, number_of_chains, directory):
 
     # Prepare the log-probabilities values
     log_probs_values = log_probs  # Assuming log_probs is shaped (chains, models)
-    xs = np.arange(1, log_probs_values.shape[1] + 1, 1)  # Prepare x-axis values
+    xs = np.arange(1, (log_probs_values.shape[1])*thinning + 1, thinning)  # Prepare x-axis values
 
     plt.figure(figsize=(10, 6))  # Set the figure size
 
@@ -200,20 +201,20 @@ def plot_log_probabilities(log_probs, thinning, number_of_chains, directory):
     if number_of_chains == 1:
         # Flatten the array for a single chain
         flattened_log_probs = log_probs_values.flatten()  # Flatten to a 1D array
-        plt.plot(xs, flattened_log_probs, label='Log-Probabilities', color=color_array[0])  # Plot single chain
+        plt.scatter(xs, flattened_log_probs, label='-Log-Probabilities', color=color_array[0], alpha=0.7)  # Plot single chain
     else:
         # Plotting lines for each chain
         for i in range(number_of_chains):
             color = color_array[i % len(color_array)]  # Cycle through colors
-            plt.plot(xs, log_probs_values[i], label=f'Chain {i + 1}', color=color)  # Dynamic label for each chain
+            plt.scatter(xs, log_probs_values[i], label=f'Chain {i + 1}', color=color, alpha=0.7)  # Dynamic label for each chain
 
         # Add a legend
         plt.legend(title='Chains')  # Title for the legend
 
     # Add titles and labels
-    plt.title('Log-Probabilities for different chains')
-    plt.xlabel('Samples')
-    plt.ylabel('Log-Probability')
+    plt.title('-Log-Probabilities for different chains')
+    plt.xlabel('Iterations')
+    plt.ylabel('-Log-Probability')
 
     # Add a grid for better readability
     plt.grid()
@@ -235,16 +236,21 @@ def plot_log_probabilities(log_probs, thinning, number_of_chains, directory):
 
 def plot_log_prob_different_models(log_probs, thinning, directory):
     label_names = ['SGLD', 'PSGLD', 'CSGLD']
+    colors = ['blue', 'green', 'red']
 
     plt.figure(figsize=(10, 6))
 
     # Plot each array in the list
-    for (log_probs, label) in enumerate(zip(log_probs, label_names)):
-        plt.plot(log_probs, label=label)  # Use label from the list
-    
+    for idx in range(len(log_probs)):
+        log_prob = log_probs[idx]
+        label = label_names[idx]
+        # Create a range of samples adjusted for thinning
+        samples = np.arange(0, len(log_prob) * thinning, thinning)  # Adjust for thinning
+        plt.scatter(samples, log_prob, color=colors[idx], label=label, alpha=0.7)
+
     plt.xlabel('Samples')
-    plt.ylabel('Log Probability')
-    plt.title('Log Probability across methods')
+    plt.ylabel('-Log Probability')
+    plt.title('-Log Probability across methods')
     plt.legend(title="Methods")  # Show the legend
     plt.grid(True)  # Add grid for better readability
     sns.despine(trim=True)

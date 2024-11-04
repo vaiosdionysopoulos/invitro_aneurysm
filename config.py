@@ -14,29 +14,31 @@ import equinox as eqx
 
 rng_key=jax.random.PRNGKey(0)
 
-with open("data_mri.pkl", 'rb') as f:
-    data = pickle.load(f)
-    
-#I HAVE TO MAKE EVRYTHING JAX IN THE BEGINNING NOT IN THE STEP_SCAN
+def load_data():
+    with open("data_mri.pkl", 'rb') as f:
+        data = pickle.load(f)
+        
+    #I HAVE TO MAKE EVRYTHING JAX IN THE BEGINNING NOT IN THE STEP_SCAN
 
-data_spatial_points = data["spatial_points"]
-data_time_values =data["time_values"]
-data_mag_values = data["mag_values"]
-data_phase_values = data["phase_values"]
+    data_spatial_points = data["spatial_points"]
+    data_time_values =data["time_values"]
+    data_mag_values = data["mag_values"]
+    data_phase_values = data["phase_values"]
 
-sigma_mag = 0.002
-sigma_phase_x = 0.002
-sigma_phase_y = 0.002
-sigma_phase_z = 0.002
+    sigma_mag = 0.002
+    sigma_phase_x = 0.002
+    sigma_phase_y = 0.002
+    sigma_phase_z = 0.002
 
-x_size = data["nx"]
-y_size = data["ny"]
-z_size = data["nz"]
-nt = data["nt"]
+    x_size = data["nx"]
+    y_size = data["ny"]
+    z_size = data["nz"]
+    nt = data["nt"]
 
-constant_num_points = data_spatial_points.shape[0]
-constant_num_timesteps =data_time_values.shape[0]
-num_obs=constant_num_points*constant_num_timesteps
+    constant_num_points = data_spatial_points.shape[0]
+    constant_num_timesteps =data_time_values.shape[0]
+    num_obs=constant_num_points*constant_num_timesteps
+    return data_spatial_points,data_time_values,data_mag_values,data_phase_values,sigma_mag,sigma_phase_x,sigma_phase_y,sigma_phase_z,num_obs
 
 class CombinedTimeStepDataset(Dataset):
     def __init__(self, spatial_points, mag_values, phase_values, time_steps):
@@ -60,7 +62,12 @@ class CombinedTimeStepDataset(Dataset):
 
     def __len__(self):
         return len(self.combined_data)
-   
+    
+    def __getitem__(self, idx):
+        x_b = self.combined_data[idx]
+        y_mag_b = self.y_mag[idx]
+        y_phase_b = self.y_phase[idx]
+        return (x_b,y_mag_b,y_phase_b)
 
 
 def get_batch(combined_dataset: CombinedTimeStepDataset, batch_size, key):
@@ -129,14 +136,16 @@ params_init = {
     "sigmas_v": jnp.array([[sigma_phase_x, sigma_phase_y, sigma_phase_z]]) * jnp.ones((num_classes, 3)),
 }
 
-def lr_schedule(iter_, a0=0.1, a1=0.40, c=0.2, warmup_iters=100, min_lr=1e-6, max_lr=0.8):
+#Just changed it to see what happens
+def lr_schedule(iter_, a0=0.1, a1=0.4, c=0.2, warmup_iters=100, min_lr=1e-6, max_lr=0.8, min_denom=1e-8):
     lr = jax.lax.cond(
         iter_ < warmup_iters,
-        lambda x: a0 * (x / warmup_iters),  # Warmup: linear increase
-        lambda x: a0 / (x + c) ** a1,        # Decay schedule
-        iter_  # The value to pass to the lambda functions
+        lambda x: a0 * (x / warmup_iters),
+        lambda x: a0 / jnp.maximum(x + c, min_denom) ** a1,
+        iter_
     )
-    return jnp.clip(lr, min_lr, max_lr)
+    lr = jnp.clip(lr, min_lr, max_lr)
+    return jnp.nan_to_num(lr, nan=0.0)
 
 @partial(vmap, in_axes=(None,0,0,0))
 def loss_data(
@@ -202,7 +211,7 @@ def logprob_fn(position, batch):
     l2_norm(position["nn_vel_v_y"]) + 
     l2_norm(position["nn_vel_v_z"])
 )
-    return  num_obs * jnp.mean(loss_data(position,x,y_mag,y_phase), axis = 0)+ 0.5e3 * l2_total
+    return -num_obs * jnp.mean(loss_data(position,x,y_mag,y_phase), axis = 0)+ 0.5e3 * l2_total
 
 @eqx.filter_jit
 def grad_estimator(p, batch, clip_val=1.):
@@ -213,3 +222,7 @@ def grad_estimator(p, batch, clip_val=1.):
     # Clipping the gradient
     return jtu.tree_map(ft.partial(jnp.clip, a_min=-clip_val, a_max=clip_val), g)
 
+def compute_grad_mag(pytree):
+    leaf_norms = jax.tree_map(lambda x: jnp.linalg.norm(x), pytree)
+    total_norm = jnp.sqrt(sum(jnp.square(leaf) for leaf in jax.tree_util.tree_flatten(leaf_norms)[0]))
+    return total_norm

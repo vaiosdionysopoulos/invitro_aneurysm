@@ -17,7 +17,9 @@ import pickle
 import os
 from config import *
 
-dataset=CombinedTimeStepDataset(data_spatial_points, data_mag_values, data_phase_values, data_time_values, )
+data_spatial_points,data_time_values,data_mag_values,data_phase_values,sigma_mag,sigma_phase_x,sigma_phase_y,sigma_phase_z,num_obs=load_data()
+dataset=CombinedTimeStepDataset(data_spatial_points, data_mag_values, data_phase_values, data_time_values)
+
 
 #sampling function takes SGLG samples every thinning_factor iterations
 def sgld_sampling(theta_init,
@@ -54,11 +56,11 @@ def sgld_sampling(theta_init,
     current_iter = 0
     init = (position, rng_key)
     if thinning_factor==1:
-        if not os.path.exists("models_no_thinning_trained_params"):
-            os.makedirs("models_no_thinning_trained_params")
+        if not os.path.exists("SGLD_models_no_thinning"):
+            os.makedirs("SGLD_models_no_thinning")
     else:
-        if not os.path.exists("models"):
-                os.makedirs("models")
+        if not os.path.exists("SGLD_models"):
+                os.makedirs("SGLD_models")
 
     order=1
     no_thinning=thinning_factor==1
@@ -66,9 +68,9 @@ def sgld_sampling(theta_init,
     for i in range(total_samples):
         iter, new_sample, rng_key = last_sample(current_iter, init)
         if no_thinning:
-            eqx.tree_serialise_leaves(f"models_no_thinning_trained_params/SGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample)  # Directly set the dictionary in the preallocated list
+            eqx.tree_serialise_leaves(f"SGLD_models_no_thinning/SGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample)  # Directly set the dictionary in the preallocated list
         else:
-            eqx.tree_serialise_leaves(f"models/SGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample)
+            eqx.tree_serialise_leaves(f"SGLD_models/SGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample)
         current_iter = iter
         init = (new_sample, rng_key)
         order+=1
@@ -83,7 +85,7 @@ def main():
     lr_package = (0.01, 0.51, 0.001)
     theta_init=eqx.filter(params_init,eqx.is_array)
     batch_size=int(0.05*num_obs)
-    total_samples=10
+    total_samples=10   
     thinning=5
     sgld_sampling(theta_init,batch_size,total_samples,thinning,lr_package,rng_key)
 

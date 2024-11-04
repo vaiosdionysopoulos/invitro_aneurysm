@@ -17,14 +17,14 @@ def plot_components(samples,total_samples,thinning,directory):
     iterations=np.arange(1, total_samples*thinning+1,thinning)
     fig, axs = plt.subplots(2, 2, figsize=(10, 8))
     # Plot the first graph
-    axs[0, 0].scatter(iterations, samples1, color='blue', alpha=0.7)
+    axs[0, 0].plot(iterations, samples1, color='blue')
     axs[0, 0].set_title(r'$\theta_1$ over iterations')
     axs[0, 0].set_xlabel('iterations')
     axs[0, 0].set_ylabel(r'$\theta_1$')
     axs[0, 0].grid()
     sns.despine(ax=axs[0, 0], trim=True)
     # Plot the second graph
-    axs[0, 1].scatter(iterations,samples2, color='red', alpha=0.7)
+    axs[0, 1].plot(iterations,samples2, color='red')
     axs[0, 1].set_title(r'$\theta_2$ over iterations')
     axs[0, 1].set_xlabel('iterations')
     axs[0, 1].set_ylabel(r'$\theta_2$')
@@ -32,7 +32,7 @@ def plot_components(samples,total_samples,thinning,directory):
     sns.despine(ax=axs[0, 1], trim=True)
 
     # Plot the third graph
-    axs[1, 0].scatter(iterations, samples3, color='green', alpha=0.7)
+    axs[1, 0].plot(iterations, samples3, color='green')
     axs[1, 0].set_title(r'$\theta_3$ over iterations')
     axs[1, 0].set_xlabel(r'$\theta_3$')
     axs[1, 0].set_ylabel('iterations')
@@ -40,7 +40,7 @@ def plot_components(samples,total_samples,thinning,directory):
     sns.despine(ax=axs[1,0], trim=True)
 
     # Plot the fourth graph
-    axs[1, 1].scatter(iterations,samples4, color='magenta', alpha=0.7)
+    axs[1, 1].plot(iterations,samples4, color='magenta')
     axs[1, 1].set_title(r'$\theta_1$ over iterations')
     axs[1, 1].set_xlabel('iterations')
     axs[1, 1].set_ylabel(r'$\theta_4$')
@@ -48,8 +48,7 @@ def plot_components(samples,total_samples,thinning,directory):
     sns.despine(ax=axs[1,1], trim=True)
     # Adjust layout to prevent overlap
     plt.tight_layout()
-    if not os.path.exists("runs"):
-        os.makedirs("runs")
+    
     # Save the figure
     save_directory = directory  # Saves in the 'runs' folder in the current directory
     save_filename = f"Components_plot_random_components_samples_{total_samples}_thinning_{thinning}.png"                # Name of the file
@@ -85,8 +84,7 @@ def plot_correlations(samples,total_samples,thinning,directory):
     plt.title("Autocorrelation for each component chain ")
 
     plt.tight_layout()
-    if not os.path.exists("runs"):
-        os.makedirs("runs")
+  
     # Save the figure
     save_directory = directory  # Saves in the 'runs' folder in the current directory
     save_filename1 = f"autocorrelations_of_thetas_samples_{total_samples}_thinning{thinning}.png"
@@ -98,8 +96,6 @@ def plot_correlations(samples,total_samples,thinning,directory):
 
 #Takes a list of arrays of the r_hat of the components and plots each component's r_hat
 def plot_r_hats(r_hat,thinning, number_of_chains, directory):
-    if not os.path.exists("runs"):
-        os.makedirs("runs")
     r1 = [r[0] for r in r_hat]
     r2 = [r[1] for r in r_hat]
     r3 = [r[2] for r in r_hat]
@@ -108,10 +104,10 @@ def plot_r_hats(r_hat,thinning, number_of_chains, directory):
     plt.figure(figsize=(10, 6))  # Set the figure size
 
     # Plotting multiple lines
-    plt.scatter(xs, r1, label=r'$\theta_1$', color='blue', alpha=0.7)  # Line 1
-    plt.scatter(xs, r2, label=r'$\theta_2$', color='red', alpha=0.7)   # Line 2
-    plt.scatter(xs, r3, label=r'$\theta_3$', color='green', alpha=0.7) # Line 3
-    plt.scatter(xs, r4, label=r'$\theta_4$', color='brown', alpha=0.7) # Line 4
+    plt.plot(xs, r1, label=r'$\theta_1$', color='blue')  # Line 1
+    plt.plot(xs, r2, label=r'$\theta_2$', color='red')   # Line 2
+    plt.plot(xs, r3, label=r'$\theta_3$', color='green') # Line 3
+    plt.plot(xs, r4, label=r'$\theta_4$', color='brown') # Line 4
 
 
     # Add titles and labels
@@ -151,12 +147,12 @@ def plot_ess(ess, thinning, number_of_chains, directory):
 
     # Check if there is only one chain
     if number_of_chains == 1:
-        plt.scatter(xs, ess_values[0], label=r'$\theta_1$', color=color_array[0], alpha=0.7)  # Plot single chain
+        plt.plot(xs, ess_values[0], label=r'$\theta_1$', color=color_array[0])  # Plot single chain
     else:
         # Plotting lines for each parameter based on number of models
         for i in range(len(ess_values)):
             color = color_array[i % len(color_array)]  # Cycle through colors
-            plt.scatter(xs, ess_values[i], label=f'Chain {i + 1}', color=color, alpha=0.7)  # Dynamic label for each chain
+            plt.plot(xs, ess_values[i], label=f'Chain {i + 1}', color=color)  # Dynamic label for each chain
 
         # Add a legend only if there are multiple chains
         plt.legend(title='Thetas')  # Title for the legend
@@ -184,10 +180,8 @@ def plot_ess(ess, thinning, number_of_chains, directory):
     plt.savefig(full_save_path, dpi=300)
     plt.close()  # Close the plot to free memory if plotting multiple times
 
-def plot_log_probabilities(log_probs, thinning, number_of_chains, directory):
-    if not os.path.exists("runs"):
-        os.makedirs("runs")
 
+def plot_log_probabilities(log_probs, thinning, number_of_chains, directory):
     # Prepare the log-probabilities values
     log_probs_values = log_probs  # Assuming log_probs is shaped (chains, models)
     xs = np.arange(1, (log_probs_values.shape[1])*thinning + 1, thinning)  # Prepare x-axis values
@@ -201,20 +195,20 @@ def plot_log_probabilities(log_probs, thinning, number_of_chains, directory):
     if number_of_chains == 1:
         # Flatten the array for a single chain
         flattened_log_probs = log_probs_values.flatten()  # Flatten to a 1D array
-        plt.scatter(xs, flattened_log_probs, label='-Log-Probabilities', color=color_array[0], alpha=0.7)  # Plot single chain
+        plt.plot(xs, flattened_log_probs, label='Log-Probabilities', color=color_array[0])  # Plot single chain
     else:
         # Plotting lines for each chain
         for i in range(number_of_chains):
             color = color_array[i % len(color_array)]  # Cycle through colors
-            plt.scatter(xs, log_probs_values[i], label=f'Chain {i + 1}', color=color, alpha=0.7)  # Dynamic label for each chain
+            plt.plot(xs, log_probs_values[i], label=f'Chain {i + 1}', color=color)  # Dynamic label for each chain
 
         # Add a legend
         plt.legend(title='Chains')  # Title for the legend
 
     # Add titles and labels
-    plt.title('-Log-Probabilities for different chains')
+    plt.title('Log-Probabilities for different chains')
     plt.xlabel('Iterations')
-    plt.ylabel('-Log-Probability')
+    plt.ylabel('Log-Probability')
 
     # Add a grid for better readability
     plt.grid()
@@ -246,11 +240,11 @@ def plot_log_prob_different_models(log_probs, thinning, directory):
         label = label_names[idx]
         # Create a range of samples adjusted for thinning
         samples = np.arange(0, len(log_prob) * thinning, thinning)  # Adjust for thinning
-        plt.scatter(samples, log_prob, color=colors[idx], label=label, alpha=0.7)
+        plt.plot(samples, log_prob, color=colors[idx], label=label)
 
     plt.xlabel('Samples')
-    plt.ylabel('-Log Probability')
-    plt.title('-Log Probability across methods')
+    plt.ylabel('Log Probability')
+    plt.title('Log Probability across methods')
     plt.legend(title="Methods")  # Show the legend
     plt.grid(True)  # Add grid for better readability
     sns.despine(trim=True)
@@ -261,6 +255,29 @@ def plot_log_prob_different_models(log_probs, thinning, directory):
     # Save the figure  
     save_directory = directory  # Saves in the 'runs' folder in the current directory
     save_filename = f"log_prob_plots_for_different_methods_thinning_{thinning}.png"
+
+    full_save_path = os.path.join(save_directory, save_filename)
+
+    # Save the figure
+    plt.savefig(full_save_path, dpi=300)
+    plt.close()  # Close the plot to free memory if plotting multiple times
+
+def plot_errors(errors,thinning,directory):
+    samples= np.arange(0, len(errors) * thinning, thinning)
+    fig,ax=plt.subplots()
+    ax.plot(samples,errors)
+    plt.xlabel('Samples')
+    plt.ylabel('MSE of x-velocity at timestep 1')
+    plt.title('MSE of velocity x over iterations')
+    plt.grid(True)  # Add grid for better readability
+    sns.despine(trim=True)
+
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
+
+    # Save the figure  
+    save_directory = directory  # Saves in the 'runs' folder in the current directory
+    save_filename = f"MSE_for_velocity_x_timestep_1_thinning_{thinning}.png"
 
     full_save_path = os.path.join(save_directory, save_filename)
 

@@ -33,11 +33,12 @@ def energy_conserv_hmc_sampling(theta_init,
     sghmc = blackjax.sghmc(grad_estimator,num_integration_steps)
 
     def sghmc_step(rng_key,position,batch,step_size,temperature=1.0):
-        position_proposed,momentum_proposed=sghmc.step(rng_key, position, batch, step_size,temperature)
+
+        position_proposed=sghmc.step(rng_key, position, batch, step_size,temperature)
 
         # Compute log-probabilities for MH acceptance ratio
-        logprob_current = logprob_fn(position)
-        logprob_proposed = logprob_fn(position_proposed)
+        logprob_current = logprob_fn(position,batch)
+        logprob_proposed = logprob_fn(position_proposed,batch)
         
         # Calculate MH acceptance ratio
         acceptance_ratio = jnp.exp(logprob_proposed - logprob_current)
@@ -45,11 +46,13 @@ def energy_conserv_hmc_sampling(theta_init,
         # Accept or reject the proposed position
         rng_key, subkey = jax.random.split(rng_key)
         u = jax.random.uniform(subkey)
-        position = jnp.where(u < acceptance_ratio, position_proposed, position)
         
-        return ((position, momentum_proposed), position)
+        accepted=u<acceptance_ratio
+        new_state = lax.cond(accepted, lambda _: position_proposed, lambda _: position, operand=None)
+        
+        return new_state
 
-    sghmc=eqx.filter_jit(sghmc_step)
+    sghmc_step=eqx.filter_jit(sghmc_step)
 
     #Executes one step of the SGHMC algirithm 
     @eqx.filter_jit
@@ -103,7 +106,7 @@ def main():
     theta_init=eqx.filter(params_init,eqx.is_array)
     batch_size=int(0.05*num_obs)
     total_samples=10   
-    thinning=5
+    thinning=1
     energy_conserv_hmc_sampling(theta_init,batch_size,total_samples,thinning,lr_package,rng_key)
 
     

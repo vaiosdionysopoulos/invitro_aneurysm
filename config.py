@@ -12,7 +12,6 @@ import functools as ft
 from functools import partial
 import equinox as eqx
 
-rng_key=jax.random.PRNGKey(0)
 
 def load_data():
     with open("data_mri.pkl", 'rb') as f:
@@ -39,6 +38,8 @@ def load_data():
     constant_num_timesteps =data_time_values.shape[0]
     num_obs=constant_num_points*constant_num_timesteps
     return data_spatial_points,data_time_values,data_mag_values,data_phase_values,sigma_mag,sigma_phase_x,sigma_phase_y,sigma_phase_z,num_obs
+
+data_spatial_points,data_time_values,data_mag_values,data_phase_values,sigma_mag,sigma_phase_x,sigma_phase_y,sigma_phase_z,num_obs=load_data()
 
 class CombinedTimeStepDataset(Dataset):
     def __init__(self, spatial_points, mag_values, phase_values, time_steps):
@@ -68,7 +69,22 @@ class CombinedTimeStepDataset(Dataset):
         y_mag_b = self.y_mag[idx]
         y_phase_b = self.y_phase[idx]
         return (x_b,y_mag_b,y_phase_b)
+    
+    def get_all_points_for_time_step(self, time_step_idx):
+        # Check if the time_step_idx is valid
+        if time_step_idx < 0 or time_step_idx >= len(self.time_steps):
+            raise IndexError("Time step index out of bounds.")
 
+        # Calculate start and end indices for the specified time step
+        start_idx = time_step_idx * len(self.spatial_points)
+        end_idx = start_idx + len(self.spatial_points)
+
+        # Retrieve all combined data, magnitudes, and phases for this time step
+        combined_data_at_time_step = self.combined_data[start_idx:end_idx]
+        y_mag_at_time_step = self.y_mag[start_idx:end_idx]
+        y_phase_at_time_step = self.y_phase[start_idx:end_idx]
+
+        return combined_data_at_time_step, y_mag_at_time_step, y_phase_at_time_step
 
 def get_batch(combined_dataset: CombinedTimeStepDataset, batch_size, key):
         # Shuffle and get random batch indices
@@ -100,41 +116,43 @@ def nn_init(in_size, out_size, num_fourier_features, width_size, depth, activati
     )
     return eqx.nn.Sequential([nn_four, nn_modified])
 
-num_classes=2
-rng_key, sub_key_vx, sub_key_vy, sub_key_vz, sub_key_geom, sub_key_lmda = jax.random.split(rng_key, 6)
-params_init = {
-    "nn_vel_v_x": nn_init(in_size=4, 
-                          out_size=1, 
-                          num_fourier_features=128, 
-                          width_size=256, 
-                          depth=4, 
-                          activation=jax.nn.tanh, 
-                          key=sub_key_vx),
-    "nn_vel_v_y": nn_init(in_size=4, 
-                          out_size=1, 
-                          num_fourier_features=128, 
-                          width_size=256, 
-                          depth=4, 
-                          activation=jax.nn.tanh, 
-                          key=sub_key_vy),
-    "nn_vel_v_z": nn_init(in_size=4, 
-                          out_size=1, 
-                          num_fourier_features=128, 
-                          width_size=256, 
-                          depth=4, 
-                          activation=jax.nn.tanh, 
-                          key=sub_key_vz),
-    "nn_geom": nn_init(in_size=4, 
-                          out_size=num_classes, 
-                          num_fourier_features=128, 
-                          width_size=256, 
-                          depth=4, 
-                          activation=jax.nn.tanh, 
-                          key=sub_key_geom),
-    "mu": jnp.array([1.1, 0.1]),
-    "sigma": sigma_mag * jnp.ones(num_classes),
-    "sigmas_v": jnp.array([[sigma_phase_x, sigma_phase_y, sigma_phase_z]]) * jnp.ones((num_classes, 3)),
-}
+def model_init(rng_key):
+    num_classes=2
+    rng_key, sub_key_vx, sub_key_vy, sub_key_vz, sub_key_geom, sub_key_lmda = jax.random.split(rng_key, 6)
+    params_init = {
+        "nn_vel_v_x": nn_init(in_size=4, 
+                            out_size=1, 
+                            num_fourier_features=128, 
+                            width_size=256, 
+                            depth=4, 
+                            activation=jax.nn.tanh, 
+                            key=sub_key_vx),
+        "nn_vel_v_y": nn_init(in_size=4, 
+                            out_size=1, 
+                            num_fourier_features=128, 
+                            width_size=256, 
+                            depth=4, 
+                            activation=jax.nn.tanh, 
+                            key=sub_key_vy),
+        "nn_vel_v_z": nn_init(in_size=4, 
+                            out_size=1, 
+                            num_fourier_features=128, 
+                            width_size=256, 
+                            depth=4, 
+                            activation=jax.nn.tanh, 
+                            key=sub_key_vz),
+        "nn_geom": nn_init(in_size=4, 
+                            out_size=num_classes, 
+                            num_fourier_features=128, 
+                            width_size=256, 
+                            depth=4, 
+                            activation=jax.nn.tanh, 
+                            key=sub_key_geom),
+        "mu": jnp.array([1.1, 0.1]),
+        "sigma": sigma_mag * jnp.ones(num_classes),
+        "sigmas_v": jnp.array([[sigma_phase_x, sigma_phase_y, sigma_phase_z]]) * jnp.ones((num_classes, 3)),
+    }
+    return params_init
 
 #Just changed it to see what happens
 def lr_schedule(iter_, a0=0.1, a1=0.4, c=0.2, warmup_iters=100, min_lr=1e-6, max_lr=0.8, min_denom=1e-8):

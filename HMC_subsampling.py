@@ -18,6 +18,7 @@ from config import *
 rng_key=jax.random.PRNGKey(0)
 data_spatial_points,data_time_values,data_mag_values,data_phase_values,sigma_mag,sigma_phase_x,sigma_phase_y,sigma_phase_z,num_obs=load_data()
 dataset=CombinedTimeStepDataset(data_spatial_points, data_mag_values, data_phase_values, data_time_values)
+params_init=model_init(rng_key)
 
 
 
@@ -105,7 +106,7 @@ def main():
     lr_package = (0.01, 0.51, 0.001)
     theta_init=eqx.filter(params_init,eqx.is_array)
     batch_size=int(0.05*num_obs)
-    total_samples=10   
+    total_samples=1500
     thinning=1
     energy_conserv_hmc_sampling(theta_init,batch_size,total_samples,thinning,lr_package,rng_key)
 

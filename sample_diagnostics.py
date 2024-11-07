@@ -2,6 +2,7 @@
 in its own file in a directory that doesn't contain other files."""
 import numpy as np
 import jax
+from jax import vmap
 import jax.numpy as jnp
 import blackjax
 import blackjax.diagnostics as diagnostics 
@@ -13,6 +14,14 @@ from config import *
 from memory_profiler import profile
 import gc
 from SGLD_sampling import dataset
+
+rng_key=jax.random.PRNGKey(0)
+data_spatial_points,data_time_values,data_mag_values,data_phase_values,sigma_mag,sigma_phase_x,sigma_phase_y,sigma_phase_z,num_obs=load_data()
+dataset=CombinedTimeStepDataset(data_spatial_points, data_mag_values, data_phase_values, data_time_values)
+params_init=model_init(rng_key)
+#Define batch_size for log probability calculations 
+batch_size=int(0.05*num_obs)
+
 
 def extract_single_model_components(model):
     comp1=model["nn_geom"].layers[1].layers[0].v[2,189]
@@ -78,10 +87,7 @@ def process_samples(directory, dataset, number_of_chains, params_structure, rng_
             index = j + i * num_models
             rng_key,batch_key= jax.random.split(rng_key, 2)
             batch=get_batch(dataset,batch_size,batch_key)
-            try:
-                network = eqx.tree_deserialise_leaves(full_file_paths[index], params_structure)
-            except:
-                print("Error at sample:",index)
+            network = eqx.tree_deserialise_leaves(full_file_paths[index], params_structure)
             log_prob=logprob_fn(network,batch)
             log_probabilities[i,j]=log_prob
             components[i, j, :] = extract_single_model_components(network)
@@ -142,18 +148,6 @@ def compare_methods(directories, dataset, params_structure, rng_key, save_direct
         
     plot_log_prob_different_models(all_log_probabilities, thinning, save_directory)
     
-    
-    
-    
 
-
-dataset=CombinedTimeStepDataset(data_spatial_points, data_mag_values, data_phase_values, data_time_values)
 if __name__ == "__main__":
-    directories=("test","models")
-    compare_methods(directories, dataset, params_init, rng_key, "test")
-    
-#Idea to make it faster. Change the plot accordingly. Try yielding as well
-"""if model_count % thinning_interval == 0:
-    cumulative_components = components[:, :model_count + 2, :]
-    r_hat = diagnostics.potential_scale_reduction(cumulative_components)
-    cumulative_r_hats.append(r_hat)""" 
+    process_samples("/workspaces/codespaces-blank/invitro_aneurysm/SGLD_models",dataset,1,params_init,rng_key,"test")

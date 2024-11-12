@@ -1,3 +1,5 @@
+"""Functions needed for SGLD sampling and oredictive analysis"""
+from typing import Callable
 import numpy as np
 import pickle
 import jax
@@ -11,7 +13,6 @@ import blackjax.sgmcmc.gradients as gradients
 import functools as ft
 from functools import partial
 import equinox as eqx
-
 
 def load_data():
     with open("data_mri.pkl", 'rb') as f:
@@ -118,7 +119,7 @@ def nn_init(in_size, out_size, num_fourier_features, width_size, depth, activati
 
 def model_init(rng_key):
     num_classes=2
-    rng_key, sub_key_vx, sub_key_vy, sub_key_vz, sub_key_geom, sub_key_lmda = jax.random.split(rng_key, 6)
+    rng_key, sub_key_vx, sub_key_vy, sub_key_vz, sub_key_geom, sub_key_press = jax.random.split(rng_key, 6)
     params_init = {
         "nn_vel_v_x": nn_init(in_size=4, 
                             out_size=1, 
@@ -148,6 +149,13 @@ def model_init(rng_key):
                             depth=4, 
                             activation=jax.nn.tanh, 
                             key=sub_key_geom),
+        "nn_press":nn_init(in_size=4, 
+                            out_size=1, 
+                            num_fourier_features=128, 
+                            width_size=256, 
+                            depth=4, 
+                            activation=jax.nn.tanh, 
+                            key=sub_key_press),
         "mu": jnp.array([1.1, 0.1]),
         "sigma": sigma_mag * jnp.ones(num_classes),
         "sigmas_v": jnp.array([[sigma_phase_x, sigma_phase_y, sigma_phase_z]]) * jnp.ones((num_classes, 3)),
@@ -163,7 +171,7 @@ def lr_schedule(iter_, a0=0.1, a1=0.4, c=0.2, warmup_iters=100, min_lr=1e-6, max
         iter_
     )
     lr = jnp.clip(lr, min_lr, max_lr)
-    return jnp.nan_to_num(lr, nan=0.0)
+    return lr
 
 @partial(vmap, in_axes=(None,0,0,0))
 def loss_data(
@@ -203,6 +211,7 @@ def loss_data(
     loss_phase = -jax.scipy.special.logsumexp(log_terms_phase)
     return loss_phase+loss_mag 
 
+
 def l2_norm(params):  
     l2_norm = jtu.tree_reduce(
         lambda x, y: jnp.sum(x) + jnp.sum(y),
@@ -211,36 +220,176 @@ def l2_norm(params):
     )
     return l2_norm
 
+#x is a vector (x,y,z,t)
 @eqx.filter_jit
-def logprob_fn(position, batch):
+@partial(jax.vmap, in_axes=(0, None))
+def divergence(x, params):
+    velx = lambda x : params["nn_vel_v_x"](x)[0]
+    vely = lambda x : params["nn_vel_v_y"](x)[0]
+    velz = lambda x : params["nn_vel_v_z"](x)[0]
+
+    # Take gradients of velocities
+    grad_velx = jax.grad(velx, argnums=0)
+    grad_vely = jax.grad(vely, argnums=0)
+    grad_velz = jax.grad(velz, argnums=0)
+
+    # Find divergence
+    divergence = grad_velx(x)[0] + grad_vely(x)[1] + grad_velz(x)[2]
+    
+    return jnp.array(divergence)
+
+#Takes a point and returns the residual of the Navier-Stokes equation
+@eqx.filter_jit
+@partial(jax.vmap, in_axes=(0, None))
+def navier_stokes_residual(x,params, reynolds=4000):
+    velx = lambda x : params["nn_vel_v_x"](x)[0]
+    vely = lambda x : params["nn_vel_v_y"](x)[0]
+    velz = lambda x : params["nn_vel_v_z"](x)[0]
+    pressure= lambda x : params["nn_press"](x)[0]
+    # Take gradients of velocities
+    grad_velx = jax.grad(velx, argnums=0)
+    grad_vely = jax.grad(vely, argnums=0)
+    grad_velz = jax.grad(velz, argnums=0)
+    grad_pressure=jax.grad(pressure, argnums=0)
+    
+    grad_grad_velx=jax.jacfwd(grad_velx, argnums=0)
+    grad_grad_vely=jax.jacfwd(grad_vely, argnums=0)
+    grad_grad_velz=jax.jacfwd(grad_velz, argnums=0)
+
+    grad_time=jnp.array([grad_velx(x)[3],grad_vely(x)[3],grad_velz(x)[3]])
+    convecive_term=jnp.array([velx(x)*grad_velx(x)[:3] + vely(x)*grad_vely(x)[:3] + velz(x)*grad_velz(x)[:3]])
+    pressure_term=grad_pressure(x)[:3]
+    laplacian_term=-(1/reynolds)*(jnp.diagonal(grad_grad_velx(x))[:3]+jnp.diagonal(grad_grad_vely(x))[:3]+jnp.diagonal(grad_grad_velz(x))[:3])
+    return jnp.sum(jnp.square(grad_time + convecive_term + pressure_term + laplacian_term))
+
+
+def reference_pressure(params,point):
+    pressure= lambda x: params["nn_press"](x)[0]
+    return pressure(point)
+    
+
+
+"""ASK ALEX ABOUT THE SIGNS IN THE LAST LINE OF LOGPROB_FN. Also ask about the prior,
+how can we have both a prior that stems from L1 regularization and one from the physics """
+#beta=1/|Ω|T (constant that appears in the probability distribution of velocity field v)
+@eqx.filter_jit
+def logprob_fn(position, batch, beta1=100, beta2=100):
     # blackjax calls the parameters which get updated 'position'
     # batch are objects that can be passed between iterations
 
-    # log prior of DNN parameters
-    # we are using a prior of N(0,1) for these, so we just need log normal
+    batch_data=batch[0]
+    batch_physics=batch[1]
+    reference_point=batch[2]
 
-    # you can access the actual NN parameter values like this
-    x=batch[0]
-    y_mag=batch[1]
-    y_phase=batch[2]
+    x=batch_data[0]
+    y_mag=batch_data[1]
+    y_phase=batch_data[2]
     l2_total = (
     l2_norm(position["nn_geom"]) + 
     l2_norm(position["nn_vel_v_x"]) + 
     l2_norm(position["nn_vel_v_y"]) + 
     l2_norm(position["nn_vel_v_z"])
 )
-    return -num_obs * jnp.mean(loss_data(position,x,y_mag,y_phase), axis = 0)+ 0.5e3 * l2_total
+    div=divergence(batch_physics, position)
+    navier_stokes_res=navier_stokes_residual(batch_physics, position)
+    return -num_obs * jnp.mean(loss_data(position,x,y_mag,y_phase), axis = 0) - 0.5e3 * l2_total - beta1*jnp.mean(jnp.square(div)) - beta2*jnp.mean(navier_stokes_res)-reference_pressure(position, reference_point)
 
 @eqx.filter_jit
-def grad_estimator(p, batch, clip_val=1.):
+def grad_estimator(p, batch, clip_val=0.4):
     """ Compute clipped estimate of gradient of log probability """
     # Call the JIT compiled gradient function
     _,g =eqx.filter_value_and_grad(logprob_fn)(p,batch)
-    
+    g = jtu.tree_map(partial(jnp.nan_to_num, nan=1e-8), g)
     # Clipping the gradient
     return jtu.tree_map(ft.partial(jnp.clip, a_min=-clip_val, a_max=clip_val), g)
 
-def compute_grad_mag(pytree):
-    leaf_norms = jax.tree_map(lambda x: jnp.linalg.norm(x), pytree)
-    total_norm = jnp.sqrt(sum(jnp.square(leaf) for leaf in jax.tree_util.tree_flatten(leaf_norms)[0]))
-    return total_norm
+
+def collocation_grid(grid_size, grid_key, a, b):
+    """
+    Uniformly samples points in a 4D domain so the integral in the physics-informed
+    loss can be cast as an expectation following the low-discrepancy sampler.
+    
+    inputs:
+    grid_size -> how many points to sample
+    grid_key -> rng_key
+    a -> tuple of minvals (a1, a2, a3, a4) for the 4 dimensions
+    b -> tuple of maxvals (b1, b2, b3, b4) for the 4 dimensions
+    """
+    
+    samples = []
+
+    # Loop over each dimension
+    for i in range(4):
+        # Create the low-discrepancy samples for this dimension
+        u0 = jax.random.uniform(grid_key, shape=(1,), minval=0, maxval=1)
+        dim_samples = jnp.mod(u0 + (jnp.arange(grid_size) + 1) / grid_size, 1)
+        
+        # Scale the samples to the correct range for this dimension
+        scaled_samples = a[i] + (b[i] - a[i]) * dim_samples
+        
+        # Append to the samples list
+        samples.append(scaled_samples)
+
+    # Stack the 4D samples into a single array
+    return jnp.stack(samples, axis=-1)
+
+
+
+#Helper function produces the structure to deserialise saved pytrees with 
+def produce_structure(params_template, reps):
+    def body_fn(carry,_):
+        return carry,carry
+    init=params_template
+    _,structure=lax.scan(body_fn,init,jnp.arange(reps))
+    return structure
+
+
+#This is working for iteratively stacking models together. It is compatible with the way 
+#we're vmaping over models below 
+def combine_trees(tree1,tree2,tree1_iscombined):
+    def add_leading_dim(leaf):
+        return jnp.expand_dims(leaf, axis=0)
+    def combine_leaf(leaf1,leaf2):
+        return jnp.concatenate((leaf1,leaf2),axis=0)
+    if tree1_iscombined:
+        tree1_reshaped=tree1
+    else:
+        tree1_reshaped=jax.tree_util.tree_map(add_leading_dim,tree1)
+
+    tree2_reshaped=jax.tree_util.tree_map(add_leading_dim,tree2)
+
+    return jax.tree_util.tree_map(combine_leaf,tree1_reshaped,tree2_reshaped)
+
+
+@eqx.filter_jit
+def eval_single_model(x, params):
+    geom = lambda x : params["nn_geom"](x)
+    velx = lambda x : params["nn_vel_v_x"](x)[0]
+    vely = lambda x : params["nn_vel_v_y"](x)[0]
+    velz = lambda x : params["nn_vel_v_z"](x)[0]
+    press = lambda x : params["nn_press"](x)[0]
+    
+    return jnp.array([geom(x)[0],geom(x)[1],velx(x),vely(x),velz(x),press(x)])
+
+
+
+@eqx.filter_vmap(in_axes = (eqx.if_array(0), None))
+def eval_ensemble(model,x):
+    return eval_single_model(x,model)
+
+
+posterior_predictive_samples = jax.jit(vmap(eval_ensemble, (None,0), 1))
+
+
+#When applied to the combined tree it returns an array of the form (models,components)
+def extract_models_components(models):
+    comp1=models["nn_geom"].layers[1].layers[0].v[:,2,189]
+    comp2=models["nn_vel_v_x"].layers[1].layers[1].bias[:,243]
+    comp3=models["nn_vel_v_y"].layers[1].layers[1].bias[:,6]
+    comp4=models["nn_vel_v_z"].layers[1].layers[2].v[:,53,1]
+    return jnp.array([comp1,comp2,comp3,comp4]).T
+
+
+
+
+

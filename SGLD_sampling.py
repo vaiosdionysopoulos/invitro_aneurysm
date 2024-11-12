@@ -15,19 +15,29 @@ from functools import partial
 import equinox as eqx
 import pickle
 import os
+import gc
 from config import *
 
 rng_key=jax.random.PRNGKey(0)
 data_spatial_points,data_time_values,data_mag_values,data_phase_values,sigma_mag,sigma_phase_x,sigma_phase_y,sigma_phase_z,num_obs=load_data()
 dataset=CombinedTimeStepDataset(data_spatial_points, data_mag_values, data_phase_values, data_time_values)
 params_init=model_init(rng_key)
+min_vals = data_spatial_points.min(axis=0)
+max_vals = data_spatial_points.max(axis=0)
+x_range=[min_vals[0], max_vals[0]]
+y_range=[min_vals[1], max_vals[1]]
+z_range=[min_vals[2], max_vals[2]]
+t_range=[data_time_values.min(), data_time_values.max()]
 
+#Ranges of each parameter 
+lower_range=[x_range[0], y_range[0], z_range[0], t_range[0]]
+upper_range=[x_range[1], y_range[1], z_range[1], t_range[1]]
 
 #sampling function takes SGLG samples every thinning_factor iterations
-def sgld_sampling(theta_init,
-                batch_size,
+def sgld_sampling(theta_init ,
+                batch_size, batch_size_physics, reference_point,
                 total_samples, thinning_factor, lr_package,
-                rng_key,temperature=1.0):
+                rng_key,save_directory,temperature=1.0):
     
     a1, a2, c = lr_package
   
@@ -40,12 +50,18 @@ def sgld_sampling(theta_init,
     def sgld_step_fun(iter,carry):
         """One step of SGLD"""
         position, rng_key = carry
-        rng_key, batch_key, sample_key = jax.random.split(rng_key, 3)
+        rng_key, batch_key, sample_key, physics_key = jax.random.split(rng_key, 4)
 
-        data_batch=get_batch(dataset,batch_size,batch_key)
+        #Physics batch should have the form (num_points,4)
+        batch_data=get_batch(dataset,batch_size,batch_key)
+        batch_physics=collocation_grid(batch_size_physics,physics_key,lower_range,upper_range)
+
+
+        batch=[batch_data, batch_physics, reference_point]
         
+
         lr = lr_schedule(iter, a1, a2, c)
-        new_position=sgld_step(sample_key, position, data_batch, lr,temperature)
+        new_position=sgld_step(sample_key, position, batch, lr,temperature)
         return (new_position, rng_key)
     
     #Executes thinning_factor iterations and returns the last sample
@@ -57,39 +73,49 @@ def sgld_sampling(theta_init,
     
     current_iter = 0
     init = (position, rng_key)
-    if thinning_factor==1:
-        if not os.path.exists("SGLD_models_no_thinning"):
-            os.makedirs("SGLD_models_no_thinning")
-    else:
-        if not os.path.exists("SGLD_models"):
-                os.makedirs("SGLD_models")
-
-    order=1
-    no_thinning=thinning_factor==1
+    combined_samples= None
+    
     
     for i in range(total_samples):
         iter, new_sample, rng_key = last_sample(current_iter, init)
-        if no_thinning:
-            eqx.tree_serialise_leaves(f"SGLD_models_no_thinning/SGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample)  # Directly set the dictionary in the preallocated list
+        if i==0:
+            combined_samples=new_sample
+        elif i==1:
+            combined_samples=combine_trees(combined_samples,new_sample,False)
+
         else:
-            eqx.tree_serialise_leaves(f"SGLD_models/SGLD_sampling_{order}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx",new_sample)
+            combined_samples=combine_trees(combined_samples,new_sample,True)
+    
+        if i==199:
+            filename=f"SGLD_samples_{(i+1)-200}-{i+1}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx"
+            filepath = os.path.join(save_directory, filename)
+            eqx.tree_serialise_leaves(filepath,combined_samples)
+            del combined_samples
+            gc.collect()
+        elif i==total_samples-1:
+            filename=f"SGLD_samples_{0}-{i+1}_batch_size_{batch_size}_thinning_{thinning_factor}.eqx"
+            filepath = os.path.join(save_directory, filename)
+            eqx.tree_serialise_leaves(filepath,combined_samples)
+            del combined_samples
+            gc.collect()
+
         current_iter = iter
         init = (new_sample, rng_key)
-        order+=1
+        
 
     
 
-#We define the learning rate package that dicatetes the learning rate at each step 
-#and the initial position. User may chaing name of file (make sure the saved pytree has 
-#the same structure as the initial model, meaning params_init), as well as the other parametres
-#of the sampling.
+#We define the learning rate package that dictates the learning rate at each step 
+#and the initial position. User may change name of file.
 def main():
     lr_package = (0.01, 0.51, 0.001)
     theta_init=eqx.filter(params_init,eqx.is_array)
-    batch_size=10
-    total_samples=3   
-    thinning=2
-    sgld_sampling(theta_init,batch_size,total_samples,thinning,lr_package,rng_key)
+    reference_point=jnp.array(lower_range)
+    batch_size=200
+    batch_size_physics=128
+    total_samples=30
+    thinning=1
+    sgld_sampling(theta_init,batch_size,batch_size_physics, reference_point, total_samples,thinning,lr_package,rng_key,"test")
 
     
 

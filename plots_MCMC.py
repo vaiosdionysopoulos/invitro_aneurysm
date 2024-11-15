@@ -9,278 +9,288 @@ import os
 from statsmodels.graphics.tsaplots import plot_acf
 import jax
 import jax.numpy as jnp
+import arviz as az
+import xarray as xr
 
-#I have to make the titles be dynamically defined depending on the statistic I want 
 
-def plot_components(samples,total_samples,thinning,directory):
-    samples1,samples2,samples3,samples4=samples
-    iterations=np.arange(1, total_samples*thinning+1,thinning)
-    fig, axs = plt.subplots(2, 2, figsize=(10, 8))
-    # Plot the first graph
-    axs[0, 0].plot(iterations, samples1, color='blue')
-    axs[0, 0].set_title(r'$\theta_1$ over iterations')
-    axs[0, 0].set_xlabel('iterations')
-    axs[0, 0].set_ylabel(r'$\theta_1$')
-    axs[0, 0].grid()
-    sns.despine(ax=axs[0, 0], trim=True)
-    # Plot the second graph
-    axs[0, 1].plot(iterations,samples2, color='red')
-    axs[0, 1].set_title(r'$\theta_2$ over iterations')
-    axs[0, 1].set_xlabel('iterations')
-    axs[0, 1].set_ylabel(r'$\theta_2$')
-    axs[0, 1].grid()
-    sns.despine(ax=axs[0, 1], trim=True)
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "DejaVu Serif"],
+    "font.size": 12,             # Default font size for general text
+    "axes.titlesize": 10,         # Default size for titles
+    "axes.labelsize": 14,         # Default size for axis labels
+    "axes.labelweight": "normal",   # Bold axis labels only
+    "legend.fontsize": 12,        # Legend font size
+    "xtick.labelsize": 10,        # X-axis tick label size
+    "ytick.labelsize": 10         # Y-axis tick label size
+})
 
-    # Plot the third graph
-    axs[1, 0].plot(iterations, samples3, color='green')
-    axs[1, 0].set_title(r'$\theta_3$ over iterations')
-    axs[1, 0].set_xlabel(r'$\theta_3$')
-    axs[1, 0].set_ylabel('iterations')
-    axs[1, 0].grid()
-    sns.despine(ax=axs[1,0], trim=True)
 
-    # Plot the fourth graph
-    axs[1, 1].plot(iterations,samples4, color='magenta')
-    axs[1, 1].set_title(r'$\theta_1$ over iterations')
-    axs[1, 1].set_xlabel('iterations')
-    axs[1, 1].set_ylabel(r'$\theta_4$')
-    axs[1, 1].grid()
-    sns.despine(ax=axs[1,1], trim=True)
-    # Adjust layout to prevent overlap
+def trace_plots(trace, save_directory, save_filename, is_combined=False, var_names=None, figsize=(12, 6), start=0):
+    """
+    Create a custom multi-trace plot with integer x-axis and starting from 0.
+    
+    Parameters:
+    trace (numpy.ndarray): The trace data in the format (chains, models, components).
+    var_names (list, optional): List of variable names to plot. If None, all variables are plotted.
+    figsize (tuple, optional): Figure size in inches.
+    start (int, optional): Starting index for the x-axis. Default is 0.
+    
+    Returns:
+    matplotlib.figure.Figure: The figure object containing the custom multi-trace plot.
+    """
+    if trace.ndim != 3:
+        raise ValueError("Input trace data must have 3 dimensions (chains, models, components).")
+    
+    num_chains = trace.shape[0]
+    num_models = trace.shape[1]
+    num_vars = trace.shape[2]
+    
+    # Adjust the number of rows to display 2 subplots per row
+    num_rows = (num_vars + 1) // 2
+
+    if var_names is None:
+        var_names = [f"Parameter {i+1}" for i in range(num_vars)]
+    
+    if not is_combined:
+        fig, axes = plt.subplots(num_rows ,2, figsize=figsize, sharex=True)
+        
+        for i, var in enumerate(var_names):
+            row = i // 2
+            col = i % 2
+            ax = axes[row, col]
+                
+            # Get the trace for the variable and model
+            var_trace = trace[:, :, i].flatten()
+                
+            # Calculate the number of samples
+            num_samples = trace.shape[1]*trace.shape[0]
+            
+            # Create the x-axis with integers
+            x = np.arange(start, start + num_samples)
+            
+            
+            ax.plot(x, var_trace)
+            
+            ax.set_title(var)
+            ax.set_xlabel("Samples")
+            ax.set_ylabel("Value")
+            ax.set_xlim(start, start + num_samples - 1)
+    else:
+        fig, ax = plt.subplots(figsize=figsize)
+            # Calculate the number of samples
+        num_samples = trace.shape[1]*trace.shape[0]
+            # Create the x-axis with integers
+        x = np.arange(start, start + num_samples)
+        for i, var in enumerate(var_names):
+        
+            # Get the trace for the variable and model
+            var_trace = trace[:, :, i].flatten()
+            
+            ax.plot(x, var_trace, label=var)
+            
+        ax.set_xlabel("Samples")
+        ax.set_ylabel("Value")
+        ax.set_xlim(start, start + num_samples - 1)
+        plt.legend(title="Variables", loc="upper left", fontsize="small")
+        
+        
+    plt.tight_layout()
+    plt.suptitle("SGLD Trace Plots")
     plt.tight_layout()
     
-    # Save the figure
-    save_directory = directory  # Saves in the 'runs' folder in the current directory
-    save_filename = f"Components_plot_random_components_samples_{total_samples}_thinning_{thinning}.png"                # Name of the file
-
-    # Combine the directory and filename
+    # Define the save path
     full_save_path = os.path.join(save_directory, save_filename)
+    
     # Save the figure
     plt.savefig(full_save_path, dpi=300)
+ 
+
+
+def plot_correlations(components, save_directory, save_filename, var_names=None, figsize=(12, 6), start=0):
+
+    num_params = components.shape[2]
+    num_rows = (num_params + 1) // 2
+    fig, axes = plt.subplots(num_rows ,2, figsize=figsize, sharex=True)
     
-    
+    if var_names is None:
+        var_names = [f"Parameter {i+1}" for i in range(num_params)]
 
-def plot_correlations(samples,total_samples,thinning,directory):
+    for i, var in enumerate(var_names):
+        row = i // 2
+        col = i % 2
+        ax = axes[row, col]
+        param_samples = components[:, :, i].ravel()
+        plot_acf(param_samples, ax=ax, lags=10, title=f"Autocorrelation for Parameter {i+1}")
 
-    samples1,samples2,samples3,samples4=samples
-    fig1, axs1 = plt.subplots(2, 2, figsize=(10, 8))
 
-    # Plot ACF for data1
-    plot_acf(samples1,lags=len(samples1)-1, ax=axs1[0, 0])
-    axs1[0, 0].set_title('ACF of 'r'$\theta_1$')
+    full_save_path = os.path.join(save_directory, save_filename)
 
-    # Plot PACF for data1
-    plot_acf(samples2,lags=len(samples2)-1, ax=axs1[0, 1])
-    axs1[0, 1].set_title('ACF of 'r'$\theta_2$')
-
-    # Plot ACF for data2
-    plot_acf(samples3,lags=len(samples3)-1, ax=axs1[1, 0])
-    axs1[1, 0].set_title('ACF of 'r'$\theta_3$')
-
-    # Plot PACF for data2
-    plot_acf(samples4,lags=len(samples4)-1, ax=axs1[1, 1])
-    axs1[1, 1].set_title('ACF of 'r'$\theta_4$')
-
-    plt.title("Autocorrelation for each component chain ")
-
-    plt.tight_layout()
-  
-    # Save the figure
-    save_directory = directory  # Saves in the 'runs' folder in the current directory
-    save_filename1 = f"autocorrelations_of_thetas_samples_{total_samples}_thinning{thinning}.png"
-
-    # Combine the directory and filename
-    full_save_path = os.path.join(save_directory, save_filename1)
     # Save the figure
     plt.savefig(full_save_path, dpi=300)
 
 #Takes a list of arrays of the r_hat of the components and plots each component's r_hat
-def plot_r_hats(r_hat,thinning, number_of_chains, directory):
-    r1 = [r[0] for r in r_hat]
-    r2 = [r[1] for r in r_hat]
-    r3 = [r[2] for r in r_hat]
-    r4 = [r[3] for r in r_hat]
-    xs=np.arange(1,len(r1)*thinning+1,thinning)
-    plt.figure(figsize=(10, 6))  # Set the figure size
+def plot_r_hat(trace, save_directory, save_filename, var_names=None, figsize=(12, 6)):
+    num_parameters = trace.shape[2]
+    samples=trace.shape[1]    
+    # Create figure
+    fig, ax = plt.subplots(figsize=figsize)
+    xs=np.arange(3,samples,1)
+    # Initialize list to store R-hat values
+    r_hat_values = [[] for _ in range(num_parameters)]
+      # Create parameter names if not provided
+    parameter_names = var_names if var_names is not None else [f"Parameter {i+1}" for i in range(num_parameters)]
+    # Calculate R-hat for each parameter
+    for i in range(num_parameters):
+        for j in range(4,samples+1):
+            trace_da = xr.DataArray(
+                trace[:, :j, i],
+                dims=["chain", "draw"],
+                coords={
+                    "chain": range(trace.shape[0]),
+                    "draw": range(j)
+                }
+            )
+            
+            # Convert to InferenceData and calculate R-hat
+            idata = az.convert_to_inference_data(trace_da)
+            r_hat = az.rhat(idata)
+            r_hat_values[i].append(float(r_hat.to_array().values[0]))
+    
+  
+        
+        # Plot all R-hat values on same axes
+        ax.plot(xs, r_hat_values[i],  linestyle='-', linewidth=2, markersize=8, label=parameter_names[i])
 
-    # Plotting multiple lines
-    plt.plot(xs, r1, label=r'$\theta_1$', color='blue')  # Line 1
-    plt.plot(xs, r2, label=r'$\theta_2$', color='red')   # Line 2
-    plt.plot(xs, r3, label=r'$\theta_3$', color='green') # Line 3
-    plt.plot(xs, r4, label=r'$\theta_4$', color='brown') # Line 4
+    # Customize plot
+    ax.set_title(r"$\hat{R}$ Values for All Parameters")
+    ax.set_xlabel("Draws", labelpad=15)  # Increased labelpad to move the xlabel up
+    ax.set_ylabel(r"$\hat{R}$")
+    ax.grid(True)
 
+    
+    # Add threshold line
+    ax.axhline(y=1.1, color='r', linestyle='--', label='Convergence Threshold')
+    
+    # Add legend
+    ax.legend()
 
-    # Add titles and labels
-    plt.title(r'Value of $\hat{R}$ over number of samples')
-    plt.xlabel('Iterations')
-    plt.ylabel(r'$\hat{R}$')
-
-    # Add a grid for better readability
-    plt.grid()
-    sns.despine(trim=True)
-    plt.legend(title='Thetas')
-    plt.axhline(y=1.1, color='gray', linestyle='--', label='Threshold (1.1)')  # Add horizontal line
-
-    # Adjust layout to prevent overlap
     plt.tight_layout()
-    number_of_models=len(r_hat)
-    save_directory = directory  # Saves in the 'runs' folder in the current directory
-    save_filename = f"R_hat_plots_for_{number_of_chains}_chains_{number_of_models}_models_each_thinning_{thinning}.png"               
-
+  
     # Combine the directory and filename
     full_save_path = os.path.join(save_directory, save_filename)
     # Save the figure
     plt.savefig(full_save_path, dpi=300)
     
 
+#Components should have the structure  (chains,models,components). If I have one chain, chain=1
+def plot_ess(trace, save_directory, save_filename, var_names=None):
+    chains, num_samples, variables = trace.shape
+    # Initialize lists for storing cumulative ESS values per variable
+    cumulative_bulk_ess = [[] for _ in range(variables)]
+    cumulative_tail_ess = [[] for _ in range(variables)]
 
-def plot_ess(ess, thinning, number_of_chains, directory):
+    # Create parameter names if not provided
+    variable_names = var_names if var_names is not None else [f"Parameter {i+1}" for i in range(variables)]
     
-   # Prepare the ESS values for each parameter
-    ess_values = list(zip(*ess))  # Transpose to separate each parameter's ESS values
-    xs = np.arange(1, len(ess_values[0])*thinning + 1, thinning)  # Prepare x-axis values
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 12))
 
-    plt.figure(figsize=(10, 6))  # Set the figure size
+    # Iterate over each variable/parameter
+    for i in range(variables):
+        # Iterate over each sample
+        for j in range(4, num_samples + 1):
+            # Create DataArray with chains and draws, and explicitly set the variable name
+            trace_da = xr.DataArray(
+                trace[:, :j, i],
+                dims=["chain", "draw"],
+                coords={
+                    "chain": range(trace.shape[0]),
+                    "draw": range(j)
+                }
+            )
+            
+            # Convert to InferenceData and calculate R-hat
+            idata = az.convert_to_inference_data(trace_da)
 
-    # Define an array of colors for chains
-    color_array = ['blue', 'red', 'green', 'brown', 'orange', 'purple', 'cyan', 'magenta']  # Extend as needed
 
-    # Check if there is only one chain
-    if number_of_chains == 1:
-        plt.plot(xs, ess_values[0], label=r'$\theta_1$', color=color_array[0])  # Plot single chain
-    else:
-        # Plotting lines for each parameter based on number of models
-        for i in range(len(ess_values)):
-            color = color_array[i % len(color_array)]  # Cycle through colors
-            plt.plot(xs, ess_values[i], label=f'Chain {i + 1}', color=color)  # Dynamic label for each chain
+            # Calculate bulk and tail ESS
+            bulk_ess = az.ess(idata)
+            tail_ess = az.ess(idata, method="tail")
 
-        # Add a legend only if there are multiple chains
-        plt.legend(title='Thetas')  # Title for the legend
+            # Store cumulative ESS values
+            cumulative_bulk_ess[i].append(float(bulk_ess.to_array().values[0]))
+            cumulative_tail_ess[i].append(float(tail_ess.to_array().values[0]))
 
-    # Add titles and labels
-    plt.title('Value of ESS over number of samples')
-    plt.xlabel('Iterations')
-    plt.ylabel('ESS')
+        # Plot bulk ESS for this component
+        ax1.plot(cumulative_bulk_ess[i], label=variable_names[i])
 
-    # Add a grid for better readability
-    plt.grid()
-    sns.despine(trim=True)
+        # Plot tail ESS for this component
+        ax2.plot(cumulative_tail_ess[i], label=variable_names[i])
 
-    # Adjust layout to prevent overlap
+    # Customize the plots
+    ax1.set_title("Bulk Effective Sample Size (ESS)")
+    ax1.set_xlabel("Draws")
+    ax1.set_ylabel("Bulk ESS")
+    ax1.axhline(y=num_samples, color='r', linestyle='--', label='Minimum Recommended ESS')
+    ax1.legend(loc="upper left")
+
+    ax2.set_title("Tail Effective Sample Size (ESS)")
+    ax2.set_xlabel("Draws")
+    ax2.set_ylabel("Tail ESS")
+    ax2.axhline(y=num_samples, color='r', linestyle='--', label='Minimum Recommended ESS')
+    ax2.legend(loc="upper left")
+
     plt.tight_layout()
-
-    # Save the figure
-    number_of_models = len(ess[0])  # Number of models based on ess
-    save_directory = directory  # Saves in the 'runs' folder in the current directory
-    save_filename = f"ESS_plots_for_{number_of_chains}_chains_{number_of_models}_models_each_thinning_{thinning}.png"
-
     full_save_path = os.path.join(save_directory, save_filename)
-
-    # Save the figure
     plt.savefig(full_save_path, dpi=300)
     plt.close()  # Close the plot to free memory if plotting multiple times
 
 
-def plot_log_probabilities(log_probs, thinning, number_of_chains, directory):
-    # Prepare the log-probabilities values
-    log_probs_values = log_probs  # Assuming log_probs is shaped (chains, models)
-    xs = np.arange(1, (log_probs_values.shape[1])*thinning + 1, thinning)  # Prepare x-axis values
+#r hats doesnt work, ess has problem with dimensions.
+"""
+# Create an ArviZ posterior plot
+fig, ax = plt.subplots(figsize=(8, 6))
+az.plot_posterior(idata, var_names=["param"], ax=ax)
 
-    plt.figure(figsize=(10, 6))  # Set the figure size
+# --- Customizations ---
 
-    # Define an array of colors for chains
-    color_array = ['blue', 'red', 'green', 'brown', 'orange', 'purple', 'cyan', 'magenta']  # Extend as needed
+# 1. Adjust Font Sizes
+plt.title("Customized Posterior Plot", fontsize=16, fontweight='bold')
+plt.xlabel("Parameter Value", fontsize=14)
+plt.ylabel("Density", fontsize=14)
 
-    # Check if there is only one chain
-    if number_of_chains == 1:
-        # Flatten the array for a single chain
-        flattened_log_probs = log_probs_values.flatten()  # Flatten to a 1D array
-        plt.plot(xs, flattened_log_probs, label='Log-Probabilities', color=color_array[0])  # Plot single chain
-    else:
-        # Plotting lines for each chain
-        for i in range(number_of_chains):
-            color = color_array[i % len(color_array)]  # Cycle through colors
-            plt.plot(xs, log_probs_values[i], label=f'Chain {i + 1}', color=color)  # Dynamic label for each chain
+# 2. Add Vertical and Horizontal Lines
+ax.axvline(0, color="red", linestyle="--", linewidth=1.5, label="Zero Line")
+ax.axhline(0.1, color="blue", linestyle=":", linewidth=1.5, label="Horizontal Threshold")
 
-        # Add a legend
-        plt.legend(title='Chains')  # Title for the legend
+# 3. Despine (remove top and right spines)
+sns.despine(ax=ax, top=True, right=True)
 
-    # Add titles and labels
-    plt.title('Log-Probabilities for different chains')
-    plt.xlabel('Iterations')
-    plt.ylabel('Log-Probability')
+# 4. Zoom Out by Adjusting x and y Limits
+x_min, x_max = ax.get_xlim()
+y_min, y_max = ax.get_ylim()
+ax.set_xlim(x_min - 0.5, x_max + 0.5)  # Expanding the x-axis
+ax.set_ylim(y_min - 0.05, y_max + 0.05)  # Expanding the y-axis
 
-    # Add a grid for better readability
-    plt.grid()
-    sns.despine(trim=True)
+# 5. Adjust Legend
+ax.legend(fontsize=12)
 
-    # Adjust layout to prevent overlap
-    plt.tight_layout()
+# 6. Use Matplotlib's tight_layout for better spacing
+plt.tight_layout()
 
-    # Save the figure
-    number_of_models = log_probs_values.shape[1]  # Number of models based on log_probs
-    save_directory = directory  # Saves in the 'runs' folder in the current directory
-    save_filename = f"log_prob_plots_for_{number_of_chains}_chains_{number_of_models}_models_each_thinning_{thinning}.png"
+plt.show()
 
-    full_save_path = os.path.join(save_directory, save_filename)
 
-    # Save the figure
-    plt.savefig(full_save_path, dpi=300)
-    plt.close()  # Close the plot to free memory if plotting multiple times
 
-def plot_log_prob_different_models(log_probs, thinning, directory):
-    label_names = ['SGLD', 'PSGLD', 'CSGLD']
-    colors = ['blue', 'green', 'red']
-
-    plt.figure(figsize=(10, 6))
-
-    # Plot each array in the list
-    for idx in range(len(log_probs)):
-        log_prob = log_probs[idx]
-        label = label_names[idx]
-        # Create a range of samples adjusted for thinning
-        samples = np.arange(0, len(log_prob) * thinning, thinning)  # Adjust for thinning
-        plt.plot(samples, log_prob, color=colors[idx], label=label)
-
-    plt.xlabel('Samples')
-    plt.ylabel('Log Probability')
-    plt.title('Log Probability across methods')
-    plt.legend(title="Methods")  # Show the legend
-    plt.grid(True)  # Add grid for better readability
-    sns.despine(trim=True)
-
-    # Adjust layout to prevent overlap
-    plt.tight_layout()
-
-    # Save the figure  
-    save_directory = directory  # Saves in the 'runs' folder in the current directory
-    save_filename = f"log_prob_plots_for_different_methods_thinning_{thinning}.png"
-
-    full_save_path = os.path.join(save_directory, save_filename)
-
-    # Save the figure
-    plt.savefig(full_save_path, dpi=300)
-    plt.close()  # Close the plot to free memory if plotting multiple times
-
-def plot_errors(errors,thinning,directory):
-    samples= np.arange(0, len(errors) * thinning, thinning)
-    fig,ax=plt.subplots()
-    ax.plot(samples,errors)
-    plt.xlabel('Samples')
-    plt.ylabel('MSE of x-velocity at timestep 1')
-    plt.title('MSE of velocity x over iterations')
-    plt.grid(True)  # Add grid for better readability
-    sns.despine(trim=True)
-
-    # Adjust layout to prevent overlap
-    plt.tight_layout()
-
-    # Save the figure  
-    save_directory = directory  # Saves in the 'runs' folder in the current directory
-    save_filename = f"MSE_for_velocity_x_timestep_1_thinning_{thinning}.png"
-
-    full_save_path = os.path.join(save_directory, save_filename)
-
-    # Save the figure
-    plt.savefig(full_save_path, dpi=300)
-    plt.close()  # Close the plot to free memory if plotting multiple times
+plt.rcParams.update({
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "DejaVu Serif"],
+    "font.size": 12,             # Default font size for general text
+    "axes.titlesize": 16,         # Default size for titles
+    "axes.labelsize": 14,         # Default size for axis labels
+    "axes.labelweight": "bold",   # Bold axis labels only
+    "legend.fontsize": 12,        # Legend font size
+    "xtick.labelsize": 10,        # X-axis tick label size
+    "ytick.labelsize": 10         # Y-axis tick label size
+})
+"""
